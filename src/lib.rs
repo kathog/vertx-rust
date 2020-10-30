@@ -31,7 +31,7 @@ mod tests {
         });
 
         let time = std::time::Instant::now();         
-        for i in 0..1000000 {
+        for i in 0..100000 {
             // event_bus.request("consume1", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             event_bus.request_with_callback("consume1", format!("regest: {}", i), move |m| {
@@ -262,14 +262,13 @@ int message_size;
             let local_sender = self.sender.lock().unwrap().clone();
             let joiner = std::thread::spawn(move || -> (){
                 loop {
-
                     match receiver.recv() {
                         Ok(msg) => {
                             debug!("{:?}", msg);
                             let inner_consummers = local_consumers.clone();
-                            let mut inner_cf = local_cf.clone();
-
+                            let inner_cf = local_cf.clone();
                             let inner_sender = local_sender.clone();
+                            
                             pool.spawn(move || {
                                 let mut mut_msg = msg;
                                 match &mut_msg.address {
@@ -286,10 +285,7 @@ int message_size;
                                     },
                                     None => {
                                         let address = mut_msg.callback_address.clone();
-                                        let callback = unsafe {
-                                            Arc::get_mut_unchecked(&mut inner_cf).lock().unwrap().remove(&address)
-
-                                        };
+                                        let callback = inner_cf.lock().unwrap().remove(&address);
                                         match callback {
                                             Some(caller) => {
                                                 caller.call((&mut mut_msg,));
@@ -321,7 +317,7 @@ int message_size;
         pub fn request(&self, address: &str, request: String) {
             let addr = address.to_owned();
             let body = request.as_bytes().to_vec();
-            let mut message = Message {
+            let message = Message {
                 address: Some(addr.clone()),
                 callback_address: uuid::Uuid::new_v4().to_string(),
                 body: Arc::new(body),
@@ -334,16 +330,13 @@ int message_size;
         where OP : Fn(& Message,) + Send + 'static + Sync + UnwindSafe, {
             let addr = address.to_owned();
             let body = request.as_bytes().to_vec();
-            let mut message = Message {
+            let message = Message {
                 address: Some(addr.clone()),
                 callback_address: format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string()),
                 body: Arc::new(body),
             };
-            unsafe {
-                let mut local_cons = self.callback_functions.clone();
-                let map = Arc::get_mut_unchecked(&mut local_cons);
-                map.lock().unwrap().insert(message.callback_address.clone(), Box::new(op));
-            }
+            let local_cons = self.callback_functions.clone();
+            local_cons.lock().unwrap().insert(message.callback_address.clone(), Box::new(op));
             let local_sender = self.sender.lock().unwrap().clone();
             local_sender.send(message).unwrap();
         }

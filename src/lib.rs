@@ -76,17 +76,17 @@ def shutdown():
     use tokio::net::TcpListener;
     use tokio::prelude::*;
 
-    #[tokio::test]
-    async fn tcp_test () {     
-        
-        let listener = TcpListener::bind("0.0.0.0:9091").await.unwrap();
+    #[test]
+    fn tcp_test () {     
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let listener = runtime.block_on(TcpListener::bind("0.0.0.0:9091")).unwrap();
         println!("{:?}", listener);
 
         loop {
-            let (mut socket, _) = listener.accept().await.unwrap();
+            let (mut socket, _) = runtime.block_on(listener.accept()).unwrap();
 
-            tokio::spawn(async move {
-
+            runtime.spawn(async move {
+            
                 let mut request: Vec<u8> = vec![];
                 let mut buf = [0; 1024];
 

@@ -24,8 +24,8 @@ pyo3 = "0.12.3"
 waiter_di = "1.6.2"
 hypospray = "0.1.2"
 zookeeper = "0.5.9"
-mio = { version = "0.7.5", features = ["os-poll", "tcp"] }
-
+tokio-net = "0.2.0-alpha.6"
+tokio = {version ="0.3.2", features = ["full"] }
 
 [dev-dependencies]
 criterion = "0.3"

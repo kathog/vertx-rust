@@ -72,17 +72,35 @@ def shutdown():
         }
     }
 
-    use std::net::{TcpListener, TcpStream};
-    use std::io::prelude::*;
-    use std::io::Result;
 
+    use tokio::net::TcpListener;
+    use tokio::prelude::*;
 
-    fn process(stream: Result<TcpStream>, pool : &rayon::ThreadPool) {
-        match stream {
-            Ok(result)  => {
-                
+    #[tokio::test]
+    async fn tcp_test () {     
+        
+        let listener = TcpListener::bind("0.0.0.0:9091").await.unwrap();
+        println!("{:?}", listener);
 
-                pool.spawn(move || {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+
+            tokio::spawn(async move {
+
+                let mut request: Vec<u8> = vec![];
+                let mut buf = [0; 1024];
+
+                loop {
+                    let n = match socket.read(&mut buf).await {
+                        Ok(n) if n == 0 => return,
+                        Ok(n) => request.extend(&buf[0..n]),
+                        Err(e) => {
+                            eprintln!("failed to read from socket; err = {:?}", e);
+                            return;
+                        }
+                    };
+
+                    // println!("{:?}", std::str::from_utf8(&request));
 
                     let data = r#"
 HTTP/1.1 200 OK
@@ -91,117 +109,15 @@ Date: Sun, 03 May 2020 07:05:15 GMT
 Content-Length: 14
 
 {"code": "UP"}
-                    "#.to_string();
-
-                        let mut local_stream = result;
-                        let mut body = vec![];
-                        let mut buf = [0; 1024];
-                        loop {
-                            match local_stream.read(&mut buf) {
-                                Ok(size) => {
-                                    body.extend_from_slice(&mut buf[0..size]);
-                                    if size < buf.len() {
-                                        break
-                                    }
-                                 } ,
-                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                    std::thread::sleep(std::time::Duration::from_micros(1));
-                                }
-                                Err(e) => println!("encountered IO error: {}", e),
-                            };
-                        };
-                        local_stream.write(&mut data.as_bytes()).unwrap();                
-                });
-            },
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(std::time::Duration::from_micros(1));
-                return;
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset => {
-                return;
-            }
-            Err(e) => panic!("encountered IO error: {}", e),
+"#.to_string();
+                    if let Err(e) = socket.write_all(data.as_bytes()).await {
+                        eprintln!("failed to write to socket; err = {:?}", e);
+                        return;
+                    }
+                }
+            });
         }
     }
-
-    #[test]
-    fn tcp_test () {    
-
-        
-        let listener = TcpListener::bind("127.0.0.1:9091").unwrap();
-        listener.set_nonblocking(true).expect("Cannot set non-blocking");
-    
-        println!("{:?}", listener);
-        
-        let pool = rayon::ThreadPoolBuilder::new().num_threads(12).build().unwrap();
-        let arc_listener = Arc::new(listener);
-        
-        // std::thread::spawn(f)
-
-
-        for stream in arc_listener.incoming() {
-            // pool.spawn(move || {
-                process(stream, &pool);
-            // });
-        }
-        
-
-
-//         let mut poll = mio::Poll::new().unwrap();
-//         // Create storage for events.
-//         let mut events = Events::with_capacity(1024);
-    
-//         // Setup the server socket.
-//         let addr = "127.0.0.1:9091".parse().unwrap();
-//         let mut server = TcpListener::bind(addr).unwrap();
-//         // Start listening for incoming connections.
-//         poll.registry()
-//             .register(&mut server, SERVER, Interest::READABLE | Interest::WRITABLE).unwrap();
-    
-//         // Setup the client socket.
-//         // let mut client = TcpStream::connect(addr).unwrap();
-//         // Register the socket.
-//         // poll.registry()
-//             // .register(&mut client, CLIENT, Interest::READABLE | Interest::WRITABLE).unwrap();
-    
-//         // Start an event loop.
-//         loop {
-//             // Poll Mio for events, blocking until we get an event.
-//             poll.poll(&mut events, None).unwrap();
-    
-//             // Process each event.
-//             for event in events.iter() {
-//                 // We can use the token we previously provided to `register` to
-//                 // determine for which socket the event is.
-//                 match event.token() {
-//                     SERVER => {
-//                         // If this is an event for the server, it means a connection
-//                         // is ready to be accepted.
-//                         //
-//                         // Accept the connection and drop it immediately. This will
-//                         // close the socket and notify the client of the EOF.
-//                         let connection = server.accept();
-//                         let mut local_stream = connection.unwrap().0;
-//                         let data = r#"
-// HTTP/1.1 200 OK
-// content-type: application/json
-// Date: Sun, 03 May 2020 07:05:15 GMT
-// Content-Length: 14
-
-// {"code": "UP"}
-// "#.to_string();
-//                         local_stream.write(&mut data.as_bytes()).unwrap();
-//                         local_stream.flush().unwrap();
-
-//                     }
-//                     _ => unreachable!(),
-//                 }
-//             }
-//         }
-
-    }
-
-
 
     #[test]
     fn zk_test () {
@@ -242,8 +158,8 @@ Content-Length: 14
     }
 
     #[test]
-    #[ignore = "tymczasowo"]
-    fn it_works() {
+    // #[ignore = "tymczasowo"]
+    fn vertx_test() {
 
         lazy_static! {
             static ref vertx : Vertx = {
@@ -323,7 +239,7 @@ pub mod vertx {
         fn default() -> Self {
             let cpus = num_cpus::get();
             let mut rng = thread_rng();
-            let vertx_port: u16 = rng.gen_range(32000, 48000);
+            let vertx_port: u16 = 0;
             let vertx_host = "127.0.0.1".to_owned();
             VertxOptions {
                 worker_pool_size : cpus/2,

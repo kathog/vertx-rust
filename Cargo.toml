@@ -20,6 +20,12 @@ num_cpus = "1.13.0"
 rand = "0.7.3"
 hashbrown = "0.9.1"
 lazy_static = "1.4.0"
+pyo3 = "0.12.3"
+waiter_di = "1.6.2"
+hypospray = "0.1.2"
+zookeeper = "0.5.9"
+mio = { version = "0.7.5", features = ["os-poll", "tcp"] }
+
 
 [dev-dependencies]
 criterion = "0.3"

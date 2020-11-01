@@ -1,5 +1,10 @@
 #![feature(get_mut_unchecked)]
 #![feature(fn_traits)]
+#![feature(plugin)]
+#[allow(non_upper_case_globals)]
+// #![plugin(hypospray_extensions)]
+
+extern crate hypospray;
 #[macro_use]
 extern crate lazy_static;
 
@@ -10,7 +15,234 @@ mod tests {
     use vertx::*;
     use std::sync::Arc;
 
+    use pyo3::{prelude::*, types::*};
+
+    
     #[test]
+    #[ignore = "hz off"]
+    fn python_test () {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let local_hazelcast = PyModule::from_code(py, r#"
+import hazelcast
+
+client = hazelcast.HazelcastClient()
+
+def get_haInfo():
+    for key, value in client.get_map("__vertx.haInfo").blocking().entry_set():
+        dictionary = {};
+        dictionary[key] = value
+        return dictionary
+
+def put_haInfo(key, value):
+    print("put_haInfo_key: " + key)
+    print("put_haInfo_value: " + value)
+    haInfo = client.get_map("__vertx.haInfo")
+    return haInfo.put(key, value).result()
+
+def shutdown():
+    client.shutdown()
+
+        "#, "hazelcast_client.py", "hazelcast_client").unwrap();
+
+        let sufix_value = r#"{"verticles":[],"group":"__DISABLED__","server_id":{"host":""#;
+        let value =  format!("{}{}\",\"port\":{}}}", sufix_value, "localhost", 1235);
+        println!("{:?}",local_hazelcast.call1("put_haInfo", (uuid::Uuid::new_v4().to_string(), value,)).unwrap());
+
+
+        let hz = local_hazelcast.call0("get_haInfo").unwrap();
+        let hz_list = hz.cast_as::<PyDict>().unwrap();
+
+        for (key, value) in hz_list {
+            println!("key: {:?}", key.cast_as::<PyString>().unwrap());
+            println!("value: {:?}", value.cast_as::<PyString>().unwrap());
+        }
+
+        // std::thread::sleep(std::time::Duration::from_secs(2));
+
+        local_hazelcast.call0("shutdown").unwrap();
+    }
+
+    use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
+    use zookeeper::recipes::cache::PathChildrenCache;
+    struct LoggingWatcher;
+    impl Watcher for LoggingWatcher {
+        fn handle(&self, e: WatchedEvent) {
+            println!("{:?}", e);
+        }
+    }
+
+    use std::net::{TcpListener, TcpStream};
+    use std::io::prelude::*;
+    use std::io::Result;
+
+
+    fn process(stream: Result<TcpStream>, pool : &rayon::ThreadPool) {
+        match stream {
+            Ok(result)  => {
+                
+
+                pool.spawn(move || {
+
+                    let data = r#"
+HTTP/1.1 200 OK
+content-type: application/json
+Date: Sun, 03 May 2020 07:05:15 GMT
+Content-Length: 14
+
+{"code": "UP"}
+                    "#.to_string();
+
+                        let mut local_stream = result;
+                        let mut body = vec![];
+                        let mut buf = [0; 1024];
+                        loop {
+                            match local_stream.read(&mut buf) {
+                                Ok(size) => {
+                                    body.extend_from_slice(&mut buf[0..size]);
+                                    if size < buf.len() {
+                                        break
+                                    }
+                                 } ,
+                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                    std::thread::sleep(std::time::Duration::from_micros(1));
+                                }
+                                Err(e) => println!("encountered IO error: {}", e),
+                            };
+                        };
+                        local_stream.write(&mut data.as_bytes()).unwrap();                
+                });
+            },
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_micros(1));
+                return;
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::ConnectionReset => {
+                return;
+            }
+            Err(e) => panic!("encountered IO error: {}", e),
+        }
+    }
+
+    #[test]
+    fn tcp_test () {    
+
+        
+        let listener = TcpListener::bind("127.0.0.1:9091").unwrap();
+        listener.set_nonblocking(true).expect("Cannot set non-blocking");
+    
+        println!("{:?}", listener);
+        
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(12).build().unwrap();
+        let arc_listener = Arc::new(listener);
+        
+        // std::thread::spawn(f)
+
+
+        for stream in arc_listener.incoming() {
+            // pool.spawn(move || {
+                process(stream, &pool);
+            // });
+        }
+        
+
+
+//         let mut poll = mio::Poll::new().unwrap();
+//         // Create storage for events.
+//         let mut events = Events::with_capacity(1024);
+    
+//         // Setup the server socket.
+//         let addr = "127.0.0.1:9091".parse().unwrap();
+//         let mut server = TcpListener::bind(addr).unwrap();
+//         // Start listening for incoming connections.
+//         poll.registry()
+//             .register(&mut server, SERVER, Interest::READABLE | Interest::WRITABLE).unwrap();
+    
+//         // Setup the client socket.
+//         // let mut client = TcpStream::connect(addr).unwrap();
+//         // Register the socket.
+//         // poll.registry()
+//             // .register(&mut client, CLIENT, Interest::READABLE | Interest::WRITABLE).unwrap();
+    
+//         // Start an event loop.
+//         loop {
+//             // Poll Mio for events, blocking until we get an event.
+//             poll.poll(&mut events, None).unwrap();
+    
+//             // Process each event.
+//             for event in events.iter() {
+//                 // We can use the token we previously provided to `register` to
+//                 // determine for which socket the event is.
+//                 match event.token() {
+//                     SERVER => {
+//                         // If this is an event for the server, it means a connection
+//                         // is ready to be accepted.
+//                         //
+//                         // Accept the connection and drop it immediately. This will
+//                         // close the socket and notify the client of the EOF.
+//                         let connection = server.accept();
+//                         let mut local_stream = connection.unwrap().0;
+//                         let data = r#"
+// HTTP/1.1 200 OK
+// content-type: application/json
+// Date: Sun, 03 May 2020 07:05:15 GMT
+// Content-Length: 14
+
+// {"code": "UP"}
+// "#.to_string();
+//                         local_stream.write(&mut data.as_bytes()).unwrap();
+//                         local_stream.flush().unwrap();
+
+//                     }
+//                     _ => unreachable!(),
+//                 }
+//             }
+//         }
+
+    }
+
+
+
+    #[test]
+    fn zk_test () {
+        
+        use std::time::Duration;
+
+        static ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH : &str = "/cluster/nodes";
+        static ZK_ROOT_NODE : &str = "io.vertx.01";
+
+        let zk = ZooKeeper::connect(&format!("{}/{}", "127.0.0.1:2181", ZK_ROOT_NODE), Duration::from_secs(15), LoggingWatcher).unwrap();
+        zk.add_listener(|zk_state| println!("New ZkState is {:?}", zk_state));
+
+        let zk_arc = Arc::new(zk);
+
+        let mut pcc = PathChildrenCache::new(zk_arc.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH).unwrap();
+        match pcc.start() {
+            Err(err) => {
+                println!("error starting cache: {:?}", err);
+                return;
+            }
+            _ => {
+                println!("cache started");
+            }
+        }
+
+        let nodes_result = zk_arc.get_children_w(ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, LoggingWatcher);
+        match nodes_result {
+            Ok(nodes) => {
+                println!("{:?}", nodes);
+            },
+            Err(e) => {
+                println!("{:?}", e);
+            }
+        };
+        let mut tmp = String::new();
+        std::io::stdin().read_line(&mut tmp).unwrap();
+        
+    }
+
+    #[test]
+    #[ignore = "tymczasowo"]
     fn it_works() {
 
         lazy_static! {
@@ -74,6 +306,7 @@ pub mod vertx {
         panic::*,
     };
     use log::{info, debug};
+    use waiter_di::*;
 
 
     #[derive(Debug, Clone)]
@@ -268,7 +501,7 @@ int message_size;
                             let inner_consummers = local_consumers.clone();
                             let inner_cf = local_cf.clone();
                             let inner_sender = local_sender.clone();
-                            
+
                             pool.spawn(move || {
                                 let mut mut_msg = msg;
                                 match &mut_msg.address {

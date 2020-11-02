@@ -64,7 +64,9 @@ def shutdown():
     }
 
     use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
-    use zookeeper::recipes::cache::PathChildrenCache;
+    use zookeeper::recipes::cache::*;
+    use serde_json::*;
+    use serde::{Serialize, Deserialize};
     struct LoggingWatcher;
     impl Watcher for LoggingWatcher {
         fn handle(&self, e: WatchedEvent) {
@@ -120,18 +122,31 @@ Content-Length: 14
     }
 
     #[test]
-    fn zk_test () {
-        
+    fn zk_test () {  
         use std::time::Duration;
-
         static ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH : &str = "/cluster/nodes";
+        static ZK_PATH_HA_INFO : &str = "/syncMap/__vertx.haInfo";
+        static ZK_PATH_SUBS : &str = "/asyncMultiMap/__vertx.subs";
         static ZK_ROOT_NODE : &str = "io.vertx.01";
+        static serialize_data : &str = "\u{0}��\u{0}\u{5}sr\u{0}6io.vertx.spi.cluster.zookeeper.impl.ZKSyncMap$KeyValueZ�\u{1a}\u{0}IiLz\u{2}\u{0}\u{2}L\u{0}\u{3}keyt\u{0}\u{12}Ljava/lang/Object;L\u{0}\u{5}valueq\u{0}~\u{0}\u{1}xpt\u{0}$";
+
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ServerId {
+            host: String,
+            port: usize
+        }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct NodeId {
+            verticles: Vec<String>,
+            group: String,
+            server_id: ServerId
+        }
+
+
 
         let zk = ZooKeeper::connect(&format!("{}/{}", "127.0.0.1:2181", ZK_ROOT_NODE), Duration::from_secs(15), LoggingWatcher).unwrap();
         zk.add_listener(|zk_state| println!("New ZkState is {:?}", zk_state));
-
         let zk_arc = Arc::new(zk);
-
         let mut pcc = PathChildrenCache::new(zk_arc.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH).unwrap();
         match pcc.start() {
             Err(err) => {
@@ -143,18 +158,69 @@ Content-Length: 14
             }
         }
 
-        let nodes_result = zk_arc.get_children_w(ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, LoggingWatcher);
-        match nodes_result {
-            Ok(nodes) => {
-                println!("{:?}", nodes);
-            },
-            Err(e) => {
-                println!("{:?}", e);
+        let zk_ark0 = zk_arc.clone();
+        pcc.add_listener(move |event| {
+            match event {
+                PathChildrenCacheEvent::ChildAdded(_id, name) => {
+                    println!("ChildAdded id: {:?}, name: {:?}", _id.replace("/cluster/nodes/", ""), std::str::from_utf8(&name.0));
+                    match std::str::from_utf8(&name.0) {
+                        Ok(node_id) => {
+                            match zk_ark0.get_data_w(&format!("{}/{}", ZK_PATH_HA_INFO, node_id), LoggingWatcher) {
+                                Ok(data) => {
+                                    let node_data = String::from_utf8_lossy(&data.0).replace(serialize_data, "");
+                                    let node_split : Vec<&str> = node_data.split("\u{0}U").collect();
+                                    let value : NodeId = serde_json::from_str(node_split[1]).unwrap();
+                                    println!("node id: {:?}, value: {:?}", node_id, value);
+                                    println!("value as string: {}", serde_json::to_string(&value).unwrap());
+                                },
+                                Err(_) => {}
+                            }
+
+                            match zk_ark0.get_children_w(&format!("{}", ZK_PATH_SUBS), LoggingWatcher) {
+                                Ok(data ) => {
+                                    println!("event.buses: {:?}", data);
+                                    for event_bus in data {
+                                        match zk_ark0.get_data_w(&format!("{}/{}/{}", ZK_PATH_SUBS, event_bus, node_id), LoggingWatcher) {
+                                            Ok(data) => {
+                                                println!("__vertx.subs: {:?}", String::from_utf8_lossy(&data.0));
+                                            },
+                                            Err(_) => {}
+                                        }
+                                    }
+                                },
+                                Err(_) => {}
+                            }
+
+                            
+                        },
+                        Err(_) => {}
+                    }
+                },
+                PathChildrenCacheEvent::ChildRemoved(id) => {
+                    println!("ChildRemoved: {:?}", id.replace("/cluster/nodes/", ""));
+                },
+                _ => {}
             }
-        };
-        let mut tmp = String::new();
-        std::io::stdin().read_line(&mut tmp).unwrap();
-        
+        });
+
+        // let nodes_result = zk_arc.get_children(ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, false);
+        // match nodes_result {
+        //     Ok(nodes) => {
+        //         for node in nodes {
+        //             let data =  zk_arc.get_data(&format!("{}/{}", ZK_PATH_HA_INFO, node), false).unwrap();
+        //             let node_data = String::from_utf8_lossy(&data.0).replace(serialize_data, "");
+        //             let node_split : Vec<&str> = node_data.split("\u{0}U").collect();
+        //             println!("Node id: {:?}, value: {:?}", node_split[0], node_split[1]);
+        //         }
+        //     },
+        //     Err(e) => {
+        //         println!("{:?}", e);
+        //     }
+        // };
+
+
+        std::thread::park();
+
     }
 
     #[test]

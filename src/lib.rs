@@ -15,53 +15,136 @@ mod tests {
     use vertx::*;
     use std::sync::Arc;
 
-    use pyo3::{prelude::*, types::*};
+    // use pyo3::{prelude::*, types::*};
 
-    
-    #[test]
-    #[ignore = "hz off"]
-    fn python_test () {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        let local_hazelcast = PyModule::from_code(py, r#"
-import hazelcast
-
-client = hazelcast.HazelcastClient()
-
-def get_haInfo():
-    for key, value in client.get_map("__vertx.haInfo").blocking().entry_set():
-        dictionary = {};
-        dictionary[key] = value
-        return dictionary
-
-def put_haInfo(key, value):
-    print("put_haInfo_key: " + key)
-    print("put_haInfo_value: " + value)
-    haInfo = client.get_map("__vertx.haInfo")
-    return haInfo.put(key, value).result()
-
-def shutdown():
-    client.shutdown()
-
-        "#, "hazelcast_client.py", "hazelcast_client").unwrap();
-
-        let sufix_value = r#"{"verticles":[],"group":"__DISABLED__","server_id":{"host":""#;
-        let value =  format!("{}{}\",\"port\":{}}}", sufix_value, "localhost", 1235);
-        println!("{:?}",local_hazelcast.call1("put_haInfo", (uuid::Uuid::new_v4().to_string(), value,)).unwrap());
+    use j4rs::{Instance, InvocationArg, Jvm, JvmBuilder, ClasspathEntry, MavenArtifact, MavenArtifactRepo, MavenSettings};
+    use std::convert::TryFrom;
+    use rustc_serialize::base64::FromBase64;
+    use core::convert::TryInto;
+    use serde_json::*;
 
 
-        let hz = local_hazelcast.call0("get_haInfo").unwrap();
-        let hz_list = hz.cast_as::<PyDict>().unwrap();
-
-        for (key, value) in hz_list {
-            println!("key: {:?}", key.cast_as::<PyString>().unwrap());
-            println!("value: {:?}", value.cast_as::<PyString>().unwrap());
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ServerId {
+            host: String,
+            port: usize
+        }
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct ClusterNodeInfo {
+            node_id: String,
+            server_id: ServerId
         }
 
-        // std::thread::sleep(std::time::Duration::from_secs(2));
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        struct NodeInfo {
+            verticles: Vec<String>,
+            group: String,
+            server_id: ServerId
+        }
+    
+        fn vertx_ha_info_as_node(data : Vec<u8>, jvm : &Jvm) -> (String, NodeInfo) {
+            let data_as_i8 : Vec<InvocationArg> = data.into_iter().map(|x| InvocationArg::try_from( x as i8).unwrap()).collect();
+            let data_as_java_array = jvm.create_java_array("java.lang.Byte", &data_as_i8).unwrap();
+            let to_key_value = jvm.invoke_static("eu.craftsoft.NodeInfoSerializer", "toKeyValue", &vec![InvocationArg::from(data_as_java_array)]);
+            let result_as_instance = to_key_value.unwrap();
+            let result_as_vector = jvm.to_rust::<Vec<String>>(result_as_instance).unwrap();
 
-        local_hazelcast.call0("shutdown").unwrap();
-    }
+            return (result_as_vector[0].clone(), serde_json::from_str(&result_as_vector[1]).unwrap());
+        }
+
+        fn vertx_ha_info_as_bytes(id : String, node: NodeInfo, jvm : &Jvm) -> Vec<u8> {
+            let id_as_java = InvocationArg::try_from(id).unwrap();
+            let node_as_java = InvocationArg::try_from(serde_json::to_string(&node).unwrap()).unwrap();
+    
+            let from_key_value = jvm.invoke_static("eu.craftsoft.NodeInfoSerializer", "fromKeyValue", &vec![id_as_java, node_as_java]);
+            let result = from_key_value.unwrap();
+            let result_as_rust = jvm.to_rust::<String>(result).unwrap();
+            return result_as_rust.from_base64().unwrap();
+        }
+
+        fn vertx_subs_as_bytes (node: ClusterNodeInfo, jvm : &Jvm) -> Vec<u8> {
+            let service_id = jvm.create_instance("io.vertx.core.net.impl.ServerID", &vec![
+                InvocationArg::try_from(node.server_id.port as i32).unwrap().into_primitive().unwrap(),
+                InvocationArg::try_from(node.server_id.host).unwrap()
+                ]).unwrap();
+
+            let cluster_node_id = jvm.create_instance("io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo", &vec![
+                InvocationArg::try_from(node.node_id).unwrap(),
+                InvocationArg::from(service_id)
+                ]).unwrap();
+
+            let node_id_as_bytes = jvm.invoke_static("eu.craftsoft.NodeInfoSerializer", "fromNodeInfo", &vec![InvocationArg::from(cluster_node_id)]);
+            let node_id_as_rust_bytes = jvm.to_rust::<String>(node_id_as_bytes.unwrap()).unwrap();
+            return node_id_as_rust_bytes.from_base64().unwrap();
+        }
+
+        fn vertx_subs_as_node(data : Vec<u8>, jvm : &Jvm) -> ClusterNodeInfo {
+            let data_as_i8 : Vec<InvocationArg> = data.into_iter().map(|x| InvocationArg::try_from( x as i8).unwrap()).collect();
+            let data_as_java_array = jvm.create_java_array("java.lang.Byte", &data_as_i8).unwrap();
+            let to_key_value = jvm.invoke_static("eu.craftsoft.NodeInfoSerializer", "toNodeInfo", &vec![InvocationArg::from(data_as_java_array)]);
+            let result_as_instance = to_key_value.unwrap();
+            let node_id_field = jvm.field(&result_as_instance, "nodeId").unwrap();
+            let node_id_as_rust = jvm.to_rust::<String>(node_id_field).unwrap();
+            
+            let service_id_field = jvm.field(&result_as_instance, "serverID").unwrap();
+            let port_field = jvm.field(&service_id_field, "port").unwrap();
+            let host_field = jvm.field(&service_id_field, "host").unwrap();
+            let port_as_rust = jvm.to_rust::<i32>(port_field).unwrap();
+            let host_as_rust = jvm.to_rust::<String>(host_field).unwrap();
+
+            return ClusterNodeInfo {
+                node_id : node_id_as_rust,
+                server_id : ServerId {
+                    host: host_as_rust,
+                    port: port_as_rust as usize
+                }
+            };
+        }
+
+
+    #[test]
+    fn serialize_test () { 
+        let time = std::time::Instant::now();
+        let entry = ClasspathEntry::new("/home/nerull/dev/repos/java/node-info-serializer/target/node-info-serializer-1.0.0-fat.jar");
+        let jvm: Jvm = JvmBuilder::new().classpath_entry(entry).build().unwrap();
+        println!("init jvm time: {:?}", time.elapsed());
+
+        for i in 0..1 {
+            let time = std::time::Instant::now();
+
+            let node = ClusterNodeInfo {
+                node_id : "21a8a87e-55c6-4341-a3b2-67567c9cacfc".to_owned(),
+                server_id : ServerId {
+                    host: "localhost".to_owned(),
+                    port: 45937
+                }
+            };
+
+            let node_info = NodeInfo {
+                verticles : vec![],
+                group: "__DISABLED__".to_owned(),
+                server_id : ServerId {
+                    host: "localhost".to_owned(),
+                    port: 45937
+                }
+            };
+
+            let subs_as_bytes = vertx_subs_as_bytes(node, &jvm);
+            // println!("{:?}", String::from_utf8_lossy(&subs_as_bytes));
+            println!("{:?}",  vertx_subs_as_node(subs_as_bytes, &jvm));
+
+
+
+            // let v= vertx_ha_info_as_bytes("21a8a87e-55c6-4341-a3b2-67567c9cacfc".to_owned(), node_info, &jvm);
+            // println!("{:?}", String::from_utf8_lossy(&v));
+            // println!("{:?}", vertx_ha_info_as_node(v, &jvm));
+            println!("full time: {:?}", time.elapsed());
+        }
+        
+
+        // std::thread::park();
+     }
+
 
     use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
     use zookeeper::recipes::cache::*;
@@ -121,28 +204,21 @@ Content-Length: 14
         }
     }
 
+    use std::sync::Mutex;
+    use std::sync::RwLock;
+
+
+    
+
     #[test]
     fn zk_test () {  
         use std::time::Duration;
+        
         static ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH : &str = "/cluster/nodes";
         static ZK_PATH_HA_INFO : &str = "/syncMap/__vertx.haInfo";
         static ZK_PATH_SUBS : &str = "/asyncMultiMap/__vertx.subs";
         static ZK_ROOT_NODE : &str = "io.vertx.01";
-        static serialize_data : &str = "\u{0}��\u{0}\u{5}sr\u{0}6io.vertx.spi.cluster.zookeeper.impl.ZKSyncMap$KeyValueZ�\u{1a}\u{0}IiLz\u{2}\u{0}\u{2}L\u{0}\u{3}keyt\u{0}\u{12}Ljava/lang/Object;L\u{0}\u{5}valueq\u{0}~\u{0}\u{1}xpt\u{0}$";
-
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        struct ServerId {
-            host: String,
-            port: usize
-        }
-        #[derive(Debug, Clone, Serialize, Deserialize)]
-        struct NodeId {
-            verticles: Vec<String>,
-            group: String,
-            server_id: ServerId
-        }
-
-
+        
 
         let zk = ZooKeeper::connect(&format!("{}/{}", "127.0.0.1:2181", ZK_ROOT_NODE), Duration::from_secs(15), LoggingWatcher).unwrap();
         zk.add_listener(|zk_state| println!("New ZkState is {:?}", zk_state));
@@ -158,66 +234,257 @@ Content-Length: 14
             }
         }
 
+        let jvm: Jvm = JvmBuilder::new()
+                .with_maven_settings(MavenSettings::new(vec![
+                    MavenArtifactRepo::from("repsy::https://repo.repsy.io/mvn/nerull/default")])
+                ).build().unwrap();
+
+            jvm.deploy_artifact(&MavenArtifact::from("eu.craftsoft:node-info-serializer:1.0.0")).unwrap();
+            jvm.deploy_artifact(&MavenArtifact::from("io.vertx:vertx-zookeeper:3.6.3")).unwrap();
+            jvm.deploy_artifact(&MavenArtifact::from("io.vertx:vertx-core:3.9.4")).unwrap();
+
+
+        let mutex_jvm = Arc::new(Mutex::new(jvm));    
+        let clone_jvm = mutex_jvm.clone();
+
         let zk_ark0 = zk_arc.clone();
-        pcc.add_listener(move |event| {
-            match event {
-                PathChildrenCacheEvent::ChildAdded(_id, name) => {
-                    println!("ChildAdded id: {:?}, name: {:?}", _id.replace("/cluster/nodes/", ""), std::str::from_utf8(&name.0));
-                    match std::str::from_utf8(&name.0) {
-                        Ok(node_id) => {
-                            match zk_ark0.get_data_w(&format!("{}/{}", ZK_PATH_HA_INFO, node_id), LoggingWatcher) {
-                                Ok(data) => {
-                                    let node_data = String::from_utf8_lossy(&data.0).replace(serialize_data, "");
-                                    let node_split : Vec<&str> = node_data.split("\u{0}U").collect();
-                                    let value : NodeId = serde_json::from_str(node_split[1]).unwrap();
-                                    println!("node id: {:?}, value: {:?}", node_id, value);
-                                    println!("value as string: {}", serde_json::to_string(&value).unwrap());
-                                },
-                                Err(_) => {}
-                            }
+        // pcc.add_listener(move |event| {
+        //     let time = std::time::Instant::now();
+        //     let jvm: Jvm = JvmBuilder::new()
+        //         .with_maven_settings(MavenSettings::new(vec![
+        //             MavenArtifactRepo::from("repsy::https://repo.repsy.io/mvn/nerull/default")])
+        //         ).build().unwrap();
 
-                            match zk_ark0.get_children_w(&format!("{}", ZK_PATH_SUBS), LoggingWatcher) {
-                                Ok(data ) => {
-                                    println!("event.buses: {:?}", data);
-                                    for event_bus in data {
-                                        match zk_ark0.get_data_w(&format!("{}/{}/{}", ZK_PATH_SUBS, event_bus, node_id), LoggingWatcher) {
-                                            Ok(data) => {
-                                                println!("__vertx.subs: {:?}", String::from_utf8_lossy(&data.0));
-                                            },
-                                            Err(_) => {}
-                                        }
+        //     jvm.deploy_artifact(&MavenArtifact::from("eu.craftsoft:node-info-serializer:1.0.0")).unwrap();
+        //     jvm.deploy_artifact(&MavenArtifact::from("io.vertx:vertx-zookeeper:3.6.3")).unwrap();
+        //     jvm.deploy_artifact(&MavenArtifact::from("io.vertx:vertx-core:3.9.4")).unwrap();
+        //     println!("jvm init: {:?}", time.elapsed());
+        //     match event {
+        //         PathChildrenCacheEvent::ChildAdded(_id, name) => {
+        //             println!("ChildAdded id: {:?}, name: {:?}", _id.replace("/cluster/nodes/", ""), std::str::from_utf8(&name.0));
+        //             std::thread::sleep(std::time::Duration::from_micros(10));
+        //             match std::str::from_utf8(&name.0) {
+        //                 Ok(node_id) => {
+        //                     match zk_ark0.get_data(&format!("{}/{}", ZK_PATH_HA_INFO, node_id), false) {
+        //                         Ok(data) => {
+        //                             let node_tuple = vertx_ha_info_as_node(data.0, &jvm);
+        //                             println!("node id: {:?}, value: {:?}", node_tuple.0, node_tuple.1);
+        //                             match zk_ark0.get_children(&format!("{}", ZK_PATH_SUBS), false) {
+        //                                 Ok(data ) => {
+        //                                     println!("event.buses: {:?}", data);
+        //                                     for event_bus in data {
+        //                                         match zk_ark0.get_data_w(&format!("{}/{}/{}:{}:{}", ZK_PATH_SUBS, event_bus, node_id, node_tuple.1.server_id.host, node_tuple.1.server_id.port), LoggingWatcher) {
+        //                                             Ok(data) => {
+        //                                                 println!("__vertx.subs: {:?}", vertx_subs_as_node(data.0, &jvm));
+        //                                             },
+        //                                             Err(_) => {}
+        //                                         }
+        //                                     }
+        //                                 },
+        //                                 Err(_) => {}
+        //                             }     
+        //                         },
+        //                         Err(_) => {}
+        //                     }                                               
+        //                 },
+        //                 Err(_) => {}
+        //             }
+        //         },
+        //         PathChildrenCacheEvent::ChildRemoved(id) => {
+        //             println!("ChildRemoved: {:?}", id.replace("/cluster/nodes/", ""));
+        //         },
+        //         _ => {}
+        //     }
+        // });
+
+        // let mut ha_info_cache = PathChildrenCache::new(zk_arc.clone(), ZK_PATH_HA_INFO).unwrap();
+        // match ha_info_cache.start() {
+        //     Err(err) => {
+        //         println!("error starting cache: {:?}", err);
+        //         return;
+        //     }
+        //     _ => {
+        //         println!("ha_info_cache started");
+        //     }
+        // }
+        // ha_info_cache.add_listener(move |event| {
+        //     println!("ha_info_cache event: {:?}", event);
+        // });
+
+
+        let mut zk_path_subs = PathChildrenCache::new(zk_arc.clone(), ZK_PATH_SUBS).unwrap();
+        zk_path_subs.start().unwrap();
+        let zk_ark1 = zk_arc.clone();
+        let subs : Arc<Mutex<Vec<Mutex<PathChildrenCache>>>> = Arc::new(Mutex::new(Vec::new())); 
+        let clone_subs = subs.clone();
+
+        let (sender, receiver) : (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
+        
+        let zk_subs = zk_ark1.clone();
+        std::thread::spawn(move || {
+            loop {
+
+                match receiver.recv() {
+                    Ok(recv) => {
+                        // println!("inner_subs path: {:?}", &recv);
+                        let inner_subs = Mutex::new(PathChildrenCache::new(zk_subs.clone(), &recv).unwrap());
+                        inner_subs.lock().unwrap().start().unwrap();
+                        inner_subs.lock().unwrap().add_listener(move |ev| {
+                            match ev {
+                                PathChildrenCacheEvent::ChildAdded(id, data) => {
+                                    let data_as_byte = &data.0;
+                                    let mut copy_data = Vec::with_capacity(data_as_byte.len());
+                                    for byte in data_as_byte {
+                                        copy_data.push(*byte);
                                     }
-                                },
-                                Err(_) => {}
-                            }
+                                    println!("inner_subs event: {:?}", String::from_utf8_lossy(&copy_data));
+                                    //idx 0: flaga bool 
+                                    let cluster_serializable = data_as_byte[0] == 1;
+                                    println!("{:?}", cluster_serializable);
+                                    println!("{:?}", &data_as_byte[191..]);
 
+                                    //stream header
+                                    //STREAM_MAGIC
+                                    println!("{}", i16::from_be_bytes(copy_data[1..3].try_into().unwrap()));
+                                    //STREAM_VERSION
+                                    println!("{}", i16::from_be_bytes(copy_data[3..5].try_into().unwrap()));
+                                    
+                                    
+                                    //idx 5: TC_OBJECT
+                                    //idx 6: TC_CLASSDESC 
+                                    //idx 7-8: class name size
+                                    //class name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[9..62]));
+                                    //serialVersionUID
+                                    // let serialVersionUID : [u8;8] = [copy_data[62], copy_data[63], copy_data[64], copy_data[65], copy_data[66], copy_data[67], copy_data[68], copy_data[69]];
+                                    // let (int_bytes, rest) = copy_data[62..70].split_at(std::mem::size_of::<i64>());
+                                    println!("{:?}", i64::from_be_bytes(copy_data[62..70].try_into().unwrap()));
+                                    //class flags
+                                    println!("{:?}", copy_data[70]);
+                                    //fields len
+                                    println!("{:?}", i16::from_be_bytes(copy_data[71..73].try_into().unwrap()));
+
+                                    // fields loop
+                                    // field type:
+                                    println!("{:?}", copy_data[73]);
+                                    // nodeId
+                                    // field name len
+                                    let f_len = i16::from_be_bytes(copy_data[74..76].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[76..(76+f_len) as usize]));
+                                    //type string
+                                    // TC_CLASS
+                                    println!("{:?}", copy_data[82]);
+                                    let f_len = i16::from_be_bytes(copy_data[83..85].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[86..(86+f_len) as usize]));
+                                    
+                                    //serverID
+                                    // field name len
+                                    let f_len = i16::from_be_bytes(copy_data[104..106].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[106..(106+f_len) as usize]));
+                                    // TC_CLASS
+                                    println!("{:?}", copy_data[114]);
+                                    let f_len = i16::from_be_bytes(copy_data[115..117].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[117..(117+f_len) as usize]));
+                                    
+                                    //TC_ENDBLOCKDATA
+                                    println!("{:?}", copy_data[150]);
+                                    //TC_NULL
+                                    println!("{:?}", copy_data[151]);
+
+                                    //nodeId , TC_CLASS
+                                    println!("{:?}", copy_data[152]);
+                                    let f_len = i16::from_be_bytes(copy_data[153..155].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field value
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[155..(155+f_len) as usize]));
+                                    println!("act {:?}", (155+f_len));
+
+                                    println!("{:?}", copy_data[191]);
+                                    println!("{:?}", copy_data[192]);
+
+                                    let f_len = i16::from_be_bytes(copy_data[193..195].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    println!("class size {:?}", f_len);
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[195..(195+f_len) as usize]));
+                                    
+                                    //serial uuid
+                                    println!("{:?}", i64::from_be_bytes(copy_data[226..234].try_into().unwrap()));
+                                    //class flags
+                                    println!("{:?}", copy_data[234]);
+                                    //fields len
+                                    println!("{:?}", i16::from_be_bytes(copy_data[235..237].try_into().unwrap()));
+                                    
+
+
+                                    // fields loop
+                                    //port
+                                    // field type:
+                                    println!("{:?}", copy_data[237]);
+                                    // field name len
+                                    let f_len = i16::from_be_bytes(copy_data[238..240].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[240..(240+f_len) as usize]));
+                                    println!("act {:?}", (240+f_len));
+                                    
+                                    //host
+                                    // field type:
+                                    println!("{:?}", copy_data[244]);
+                                    // field name len
+                                    let f_len = i16::from_be_bytes(copy_data[245..247].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    // field name
+                                    println!("{:?}", String::from_utf8_lossy(&copy_data[247..(247+f_len) as usize]));
+                                    println!("act {:?}", (247+f_len));
+                                    // TC_REFERENCE
+                                    println!("{:?}", copy_data[251]);
+                                    let f_len = i32::from_be_bytes(copy_data[252..256].try_into().unwrap());
+                                    println!("{:?}", f_len);
+
+                                     //TC_ENDBLOCKDATA
+                                     println!("{:?}", copy_data[256]);
+                                     //TC_NULL
+                                     println!("{:?}", copy_data[257]);
+
+                                     let f_len = i32::from_be_bytes(copy_data[258..262].try_into().unwrap());
+                                    println!("{:?}", f_len);
+                                    
+                                },
+                                PathChildrenCacheEvent::ChildRemoved(id) => {
+
+                                },
+                                _ => {}
+                            }
                             
-                        },
-                        Err(_) => {}
-                    }
-                },
-                PathChildrenCacheEvent::ChildRemoved(id) => {
-                    println!("ChildRemoved: {:?}", id.replace("/cluster/nodes/", ""));
+                        });
+
+                        clone_subs.lock().unwrap().push(inner_subs);
+                    },
+                    Err(e) => {}
+                }
+
+            }
+        });
+
+        let sender_clone = sender.clone();
+
+        zk_path_subs.add_listener(move |event| {
+            // println!("zk_path_subs event: {:?}", event);
+            match event {
+                PathChildrenCacheEvent::ChildAdded(_id, _data) => {
+                    sender_clone.send(_id.clone()).unwrap();
                 },
                 _ => {}
             }
         });
-
-        // let nodes_result = zk_arc.get_children(ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, false);
-        // match nodes_result {
-        //     Ok(nodes) => {
-        //         for node in nodes {
-        //             let data =  zk_arc.get_data(&format!("{}/{}", ZK_PATH_HA_INFO, node), false).unwrap();
-        //             let node_data = String::from_utf8_lossy(&data.0).replace(serialize_data, "");
-        //             let node_split : Vec<&str> = node_data.split("\u{0}U").collect();
-        //             println!("Node id: {:?}, value: {:?}", node_split[0], node_split[1]);
-        //         }
-        //     },
-        //     Err(e) => {
-        //         println!("{:?}", e);
-        //     }
-        // };
-
 
         std::thread::park();
 

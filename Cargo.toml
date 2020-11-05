@@ -26,6 +26,9 @@ hypospray = "0.1.2"
 zookeeper = "0.5.9"
 tokio-net = "0.2.0-alpha.6"
 tokio = {version ="0.3.2", features = ["full"] }
+j4rs = "0.13"
+hex = "0.4.2"
+bytes = "0.6"
 
 [dev-dependencies]
 criterion = "0.3"

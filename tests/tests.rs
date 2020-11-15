@@ -9,7 +9,7 @@ mod tests {
 
     #[path = "../src/lib.rs"]
     extern crate vertx_rust;
-    use vertx_rust::vertx::*;
+    use vertx_rust::io::vertx::*;
     use std::sync::Arc;
     use std::convert::TryFrom;
     use rustc_serialize::base64::FromBase64;

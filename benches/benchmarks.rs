@@ -6,7 +6,7 @@ extern crate lazy_static;
 fn vertx(_c: &mut Criterion) {
     #[path = "../src/lib.rs"]
     extern crate vertx_rust;
-    use vertx_rust::vertx::*;
+    use vertx_rust::io::vertx::*;
     use std::sync::Arc;
 
     lazy_static! {

@@ -29,6 +29,8 @@ tokio = {version ="0.3.2", features = ["full"] }
 j4rs = "0.13"
 hex = "0.4.2"
 bytes = "0.6"
+jvm-serializable = {git = "https://github.com/kathog/jvm-serializable", branch = "main"}
+jvm-macro = {git = "https://github.com/kathog/jvm-serializable", branch = "main"}
 
 [dev-dependencies]
 criterion = "0.3"

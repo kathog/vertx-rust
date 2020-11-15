@@ -28,7 +28,7 @@ fn vertx(_c: &mut Criterion) {
 
     _c.bench_function("vertx_request_callback", |b| b.iter(|| {
         event_bus.request_with_callback("consume1", "regest".to_owned(), move |m| {
-            let body = m.body();
+            let _body = m.body();
            
         });
     }));

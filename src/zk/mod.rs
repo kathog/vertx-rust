@@ -1,5 +1,5 @@
 use crate::vertx::{ClusterManager, Vertx};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
 use multimap::MultiMap;
@@ -7,19 +7,24 @@ use uuid::Uuid;
 use zookeeper::ZooKeeper;
 use tokio::time::Duration;
 use log::{error, info, LevelFilter, warn};
+use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
+use std::alloc::dealloc;
 
 
 #[cfg(test)]
 mod tests {
     use crate::zk::ZookeeperClusterManager;
     use simple_logger::SimpleLogger;
+    use tokio::time::Duration;
+    use crate::vertx::ClusterManager;
 
     #[test]
     fn zk_init () {
         SimpleLogger::new().init().unwrap();
-        let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
+        let mut zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
 
-        info!("{:?}", zk.node_id);
+        zk.join();
+        std::thread::park();
     }
 
 }
@@ -59,24 +64,24 @@ struct ZookeeperClusterManager {
 
     vertx: Option<Arc<Vertx>>,
     node_id: String,
-    nodes: Vec<String>,
-    ha_infos: Vec<ClusterNodeInfo>,
-    subs: MultiMap<String, ClusterNodeInfo>,
-    zookeeper: ZooKeeper
+    nodes: Arc<Mutex<Vec<String>>>,
+    ha_infos: Arc<Mutex<Vec<ClusterNodeInfo>>>,
+    subs: Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>,
+    zookeeper: Arc<ZooKeeper>
 
 }
 
 impl ZookeeperClusterManager {
 
     pub fn new (zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
-        let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(15), |x| {}).unwrap();
+        let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |x| {}).unwrap();
         ZookeeperClusterManager {
-            nodes : Vec::new(),
+            nodes : Arc::new(Mutex::new(Vec::new())),
             vertx: None,
             node_id: Uuid::new_v4().to_string(),
-            ha_infos: Vec::new(),
-            subs: MultiMap::new(),
-            zookeeper
+            ha_infos: Arc::new(Mutex::new(Vec::new())),
+            subs: Arc::new(Mutex::new(MultiMap::new())),
+            zookeeper: Arc::new(zookeeper)
         }
     }
 
@@ -94,11 +99,144 @@ impl ClusterManager for ZookeeperClusterManager {
     }
 
     fn get_nodes(&self) -> Vec<String> {
-        self.nodes.clone()
+        self.nodes.lock().unwrap().clone()
     }
 
     fn join(&mut self) {
-        unimplemented!()
+        let mut nodes_cache = PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH).unwrap();
+        match nodes_cache.start() {
+            Err(err) => {
+                error!("error starting cache: {:?}", err);
+                return;
+            }
+            _ => {
+                debug!("{:?} cache started", ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH);
+            }
+        }
+
+        let nodes_clone = self.nodes.clone();
+        nodes_cache.add_listener(move |event| {
+            match event {
+                PathChildrenCacheEvent::ChildAdded(_id, data) => {
+                    nodes_clone.lock().unwrap().push(String::from_utf8_lossy(&data.0).to_string());
+                },
+                PathChildrenCacheEvent::ChildRemoved(id) => {
+                    let id = id.replace("/cluster/nodes/", "");
+                    let mut vec = nodes_clone.lock().unwrap();
+                    for (idx, uid) in vec.iter().enumerate() {
+                        if id == uid.clone() {
+                            vec.remove(idx);
+                            break;
+                        }
+                    }
+                },
+                _ => {}
+            }
+        });
+
+        let mut ha_info_cache = PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_HA_INFO).unwrap();
+        match ha_info_cache.start() {
+            Err(err) => {
+                error!("error starting cache: {:?}", err);
+                return;
+            }
+            _ => {
+                debug!("{:?} started", ZK_PATH_HA_INFO);
+            }
+        }
+        ha_info_cache.add_listener(move |event| {
+            match event {
+                PathChildrenCacheEvent::ChildAdded(_id, data) => {
+                    let bytes_of_data = data.0.clone();
+                    let bytes_as_string = String::from_utf8_lossy(&bytes_of_data);
+                    let idx = bytes_as_string.rfind("$");
+                    let bytes_as_string = &bytes_as_string[idx.unwrap()+1..];
+                    let mut bytes_as_string_split = bytes_as_string.split("t\u{0}U");
+                    let key_value = ZKSyncMapKeyValue {
+                        key: Object {
+                            key: bytes_as_string_split.next().unwrap().to_string(),
+                            value: bytes_as_string_split.next().unwrap().to_string(),
+                        }
+                    };
+
+                    debug!("{:?}", key_value);
+                },
+                PathChildrenCacheEvent::ChildRemoved(id) => {
+
+                }
+                _ => {}
+            }
+        });
+
+
+        let mut zk_path_subs = PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_SUBS).unwrap();
+        zk_path_subs.start().unwrap();
+        let subs : Arc<Mutex<Vec<Mutex<PathChildrenCache>>>> = Arc::new(Mutex::new(Vec::new()));
+        let clone_subs = subs.clone();
+
+        let (sender, receiver) : (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
+        let zk_clone = self.zookeeper.clone();
+        let subs_clone  = self.subs.clone();
+        std::thread::spawn(move || {
+            loop {
+
+                match receiver.recv() {
+                    Ok(recv) => {
+                        let inner_subs = Mutex::new(PathChildrenCache::new(zk_clone.clone(), &recv).unwrap());
+                        inner_subs.lock().unwrap().start().unwrap();
+
+                        let inner_subs_clone = subs_clone.clone();
+
+                        inner_subs.lock().unwrap().add_listener(move |ev| {
+                            match ev {
+                                PathChildrenCacheEvent::ChildAdded(id, data) => {
+                                    let msg_addr = recv.replace("/asyncMultiMap/__vertx.subs/", "");
+                                    let data_as_byte = &data.0;
+                                    let mut deser = ObjectInputStream{};
+                                    let node : ClusterNodeInfo = deser.read_object(data_as_byte.clone());
+                                    debug!("{:?}", node);
+                                    let mut i_subs = inner_subs_clone.lock().unwrap();
+                                    i_subs.insert(msg_addr, node);
+
+                                },
+                                PathChildrenCacheEvent::ChildRemoved(id) => {
+                                    let id = id.replace("/asyncMultiMap/__vertx.subs/", "");
+                                    let mut split_id = id.split("/");
+                                    let msg_addr = split_id.next().unwrap();
+                                    let node_info = split_id.next().unwrap();
+                                    let node_info = node_info.split(":").next().unwrap();
+                                    let mut i_subs = inner_subs_clone.lock().unwrap();
+                                    let subs = i_subs.get_vec_mut(msg_addr).unwrap();
+                                    for (idx, node) in subs.iter().enumerate() {
+                                        if node.nodeId == node_info {
+                                            subs.remove(idx);
+                                            break;
+                                        }
+                                    }
+                                },
+                                _ => {}
+                            }
+
+                        });
+
+                        clone_subs.lock().unwrap().push(inner_subs);
+                    },
+                    Err(e) => {}
+                }
+
+            }
+        });
+
+        let sender_clone = sender.clone();
+
+        zk_path_subs.add_listener(move |event| {
+            match event {
+                PathChildrenCacheEvent::ChildAdded(_id, _data) => {
+                    sender_clone.send(_id.clone()).unwrap();
+                },
+                _ => {}
+            }
+        });
     }
 
     fn leave(&self) {

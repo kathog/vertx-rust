@@ -11,17 +11,22 @@ mod tests {
     extern crate vertx_rust;
     use vertx_rust::vertx::*;
     use std::sync::Arc;
-
-
     use std::convert::TryFrom;
     use rustc_serialize::base64::FromBase64;
     use core::convert::TryInto;
     use serde_json::*;
-
     use zookeeper::{Acl, CreateMode, Watcher, WatchedEvent, ZooKeeper};
     use zookeeper::recipes::cache::*;
     use serde_json::*;
     use serde::{Serialize, Deserialize};
+    use std::sync::Mutex;
+    use std::sync::RwLock;
+    use jvm_serializable::java::io::*;
+    use futures::StreamExt;
+    use tokio::net::TcpListener;
+    use tokio::prelude::*;
+
+
     struct LoggingWatcher;
     impl Watcher for LoggingWatcher {
         fn handle(&self, e: WatchedEvent) {
@@ -30,8 +35,6 @@ mod tests {
     }
 
 
-    use tokio::net::TcpListener;
-    use tokio::prelude::*;
 
     #[test]
     fn tcp_test () {
@@ -76,11 +79,6 @@ Content-Length: 14
         }
     }
 
-    use std::sync::Mutex;
-    use std::sync::RwLock;
-    use jvm_serializable::java::io::*;
-
-
     #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
     struct ServerID {
         port: i32,
@@ -115,13 +113,6 @@ Content-Length: 14
         static ZK_ROOT_NODE : &str = "io.vertx.01";
 
 
-        let kv = ZKSyncMapKeyValue {
-            key : Object {
-                key: "0e4b0367-c5e6-4559-9284-282f27349de7".to_string(),
-                value: "{\"verticles\":[],\"group\":\"__DISABLED__\",\"server_id\":{\"host\":\"localhost\",\"port\":41469}}".to_string()
-            }
-        };
-
         let zk = ZooKeeper::connect(&format!("{}/{}", "127.0.0.1:2181", ZK_ROOT_NODE), Duration::from_secs(15), LoggingWatcher).unwrap();
         zk.add_listener(|zk_state| println!("New ZkState is {:?}", zk_state));
         let zk_arc = Arc::new(zk);
@@ -135,6 +126,10 @@ Content-Length: 14
                 println!("cache started");
             }
         }
+
+        pcc.add_listener(move |event| {
+           println!("{:?}", event);
+        });
 
         let zk_ark0 = zk_arc.clone();
 

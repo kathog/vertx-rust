@@ -4,9 +4,14 @@ version = "0.1.0"
 authors = ["nerull"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = []
+
+full = ["zk"]
+
 
 [dependencies]
+zk = { version = "*", optional = true }
 rayon = "1.5.0"
 rustc-serialize = "0.3.24"
 serde = "1.0.117"
@@ -15,22 +20,24 @@ bincode = "1.3.1"
 futures = "0.3.6"
 uuid = { version = "0.8", features = ["v4"] }
 config = "0.10.1"
-log = "0.4.11"
 num_cpus = "1.13.0"
 rand = "0.7.3"
 hashbrown = "0.9.1"
 lazy_static = "1.4.0"
-#pyo3 = "0.12.3"
 waiter_di = "1.6.2"
 hypospray = "0.1.2"
 zookeeper = "0.5.9"
 tokio-net = "0.2.0-alpha.6"
 tokio = {version ="0.3.2", features = ["full"] }
-#j4rs = "0.13"
 hex = "0.4.2"
 bytes = "0.6"
+multimap = "0.8.2"
 jvm-serializable = {git = "https://github.com/kathog/jvm-serializable", branch = "main"}
 jvm-macro = {git = "https://github.com/kathog/jvm-serializable", branch = "main"}
+log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
+simple_logger = "1.11.0"
+
+
 
 [dev-dependencies]
 criterion = "0.3"

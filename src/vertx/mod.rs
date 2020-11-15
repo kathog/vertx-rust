@@ -22,6 +22,20 @@ use std::{
 use log::{info, debug};
 use waiter_di::*;
 
+pub trait ClusterManager {
+
+    fn set_vertx(&mut self, vertx: Arc<Vertx>);
+
+    fn get_node_id(&self) -> String;
+
+    fn get_nodes(&self) -> Vec<String>;
+
+    fn join(&mut self);
+
+    fn leave(&self);
+
+}
+
 
 #[derive(Debug, Clone)]
 pub struct VertxOptions {

@@ -9,7 +9,7 @@ mod tests {
 
     #[path = "../src/lib.rs"]
     extern crate vertx_rust;
-    use vertx_rust::io::vertx::*;
+    use vertx_rust::vertx::*;
     use std::sync::Arc;
     use std::convert::TryFrom;
     use rustc_serialize::base64::FromBase64;
@@ -105,6 +105,7 @@ Content-Length: 14
 
     #[test]
     fn zk_test () {
+
         use std::time::Duration;
 
         static ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH : &str = "/cluster/nodes";

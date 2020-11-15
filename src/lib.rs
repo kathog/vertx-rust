@@ -8,5 +8,13 @@ extern crate lazy_static;
 #[macro_use]
 extern crate jvm_macro;
 extern crate jvm_serializable;
+#[macro_use]
+extern crate log;
 
-pub mod io;
+
+pub mod vertx;
+
+#[cfg(feature = "zk")]
+pub mod zk;
+
+

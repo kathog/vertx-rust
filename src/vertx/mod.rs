@@ -3,7 +3,6 @@ use rayon::prelude::*;
 use rayon::{ThreadPoolBuilder, ThreadPool};
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
-// use hashbrown::HashMap;
 use std::{
     sync::{
         Arc,
@@ -21,6 +20,23 @@ use std::{
 };
 use log::{info, debug};
 use waiter_di::*;
+use multimap::MultiMap;
+use jvm_serializable::java::io::*;
+use serde::{Serialize, Deserialize};
+
+#[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
+pub struct ServerID {
+    port: i32,
+    host: String
+}
+
+
+#[jvm_object(io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo,1)]
+pub struct ClusterNodeInfo {
+    pub nodeId: String,
+    serverID: ServerID,
+}
+
 
 pub trait ClusterManager {
 
@@ -29,6 +45,9 @@ pub trait ClusterManager {
     fn get_node_id(&self) -> String;
 
     fn get_nodes(&self) -> Vec<String>;
+
+    fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
+    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
     fn join(&mut self);
 
@@ -50,7 +69,6 @@ pub struct VertxOptions {
 impl Default for VertxOptions {
     fn default() -> Self {
         let cpus = num_cpus::get();
-        let mut rng = thread_rng();
         let vertx_port: u16 = 0;
         let vertx_host = "127.0.0.1".to_owned();
         VertxOptions {
@@ -84,8 +102,7 @@ impl From<(String, u16)> for EventBusOptions {
 impl Default for EventBusOptions {
     fn default() -> Self {
         let cpus = num_cpus::get();
-        let mut rng = thread_rng();
-        let vertx_port: u16 = rng.gen_range(32000, 48000);
+        let vertx_port: u16 = 0;
         EventBusOptions {
             event_bus_pool_size : cpus/2,
             vertx_host : String::from("127.0.0.1"),

@@ -1,4 +1,4 @@
-use crate::vertx::{ClusterManager, Vertx};
+use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo};
 use std::sync::{Arc, Mutex};
 use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
@@ -9,6 +9,7 @@ use tokio::time::Duration;
 use log::{error, info, LevelFilter, warn};
 use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
 use std::alloc::dealloc;
+use std::collections::hash_map::RandomState;
 
 
 #[cfg(test)]
@@ -35,19 +36,6 @@ static ZK_PATH_HA_INFO : &str = "/syncMap/__vertx.haInfo";
 static ZK_PATH_SUBS : &str = "/asyncMultiMap/__vertx.subs";
 pub static ZK_ROOT_NODE : &str = "io.vertx";
 
-#[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
-struct ServerID {
-    port: i32,
-    host: String
-}
-
-
-#[jvm_object(io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo,1)]
-struct ClusterNodeInfo {
-    nodeId: String,
-    serverID: ServerID,
-}
-
 #[jvm_object(java.lang.Object,0)]
 struct Object {
     key: String,
@@ -58,7 +46,6 @@ struct Object {
 struct ZKSyncMapKeyValue {
     key: Object,
 }
-
 
 struct ZookeeperClusterManager {
 
@@ -100,6 +87,14 @@ impl ClusterManager for ZookeeperClusterManager {
 
     fn get_nodes(&self) -> Vec<String> {
         self.nodes.lock().unwrap().clone()
+    }
+
+    fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>> {
+        self.ha_infos.clone()
+    }
+
+    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>> {
+        self.subs.clone()
     }
 
     fn join(&mut self) {

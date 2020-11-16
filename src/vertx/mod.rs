@@ -1,7 +1,6 @@
 use core::fmt::Debug;
-use rayon::prelude::*;
+// use rayon::prelude::*;
 use rayon::{ThreadPoolBuilder, ThreadPool};
-use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::{
     sync::{
@@ -12,17 +11,15 @@ use std::{
             Receiver,
         },
         Mutex,
-        RwLock,
     },
     thread::JoinHandle,
-    rc::Rc,
     panic::*,
 };
 use log::{info, debug};
-use waiter_di::*;
 use multimap::MultiMap;
 use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
+use std::collections::hash_map::RandomState;
 
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
 pub struct ServerID {
@@ -40,19 +37,47 @@ pub struct ClusterNodeInfo {
 
 pub trait ClusterManager {
 
-    fn set_vertx(&mut self, vertx: Arc<Vertx>);
-
     fn get_node_id(&self) -> String;
 
     fn get_nodes(&self) -> Vec<String>;
 
     fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
+
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
     fn join(&mut self);
 
     fn leave(&self);
 
+}
+
+pub struct NoClusterManager;
+
+impl ClusterManager for NoClusterManager {
+
+    fn get_node_id(&self) -> String {
+        unimplemented!()
+    }
+
+    fn get_nodes(&self) -> Vec<String> {
+        unimplemented!()
+    }
+
+    fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>> {
+        unimplemented!()
+    }
+
+    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo, RandomState>>> {
+        unimplemented!()
+    }
+
+    fn join(&mut self) {
+        unimplemented!()
+    }
+
+    fn leave(&self) {
+        unimplemented!()
+    }
 }
 
 
@@ -80,8 +105,19 @@ impl Default for VertxOptions {
     }
 }
 
+trait TEventBusOptions<T: ClusterManager> {
+
+}
+
+impl <T: ClusterManager>TEventBusOptions<T> for EventBusOptions {
+
+
+
+}
+
 #[derive(Debug, Clone)]
 pub struct EventBusOptions {
+
     event_bus_pool_size: usize,
     vertx_host : String,
     vertx_port : u16,
@@ -107,6 +143,7 @@ impl Default for EventBusOptions {
             event_bus_pool_size : cpus/2,
             vertx_host : String::from("127.0.0.1"),
             vertx_port,
+            // cluster_manager: None
         }
     }
 }
@@ -165,24 +202,29 @@ impl Debug for Message {
 }
 
 
-pub struct Vertx {
+pub struct Vertx<CM: ClusterManager> {
     options : VertxOptions,
     worker_pool: ThreadPool,
     event_bus: Arc<EventBus>,
+    cluster_manager: Option<CM>
 }
 
-impl Vertx {
+impl <CM: ClusterManager>Vertx<CM> {
 
-    pub fn new (options: VertxOptions) -> Vertx {
+    pub fn new (options: VertxOptions) -> Vertx<CM> {
         let worker_pool = ThreadPoolBuilder::new().num_threads(options.worker_pool_size).build().unwrap();
         let event_bus = EventBus::new(options.event_bus_options.clone());
         return Vertx {
             options,
             worker_pool,
             event_bus : Arc::new(event_bus),
+            cluster_manager: None
         };
     }
 
+    pub fn set_cluster_manager(&mut self, cm: CM) {
+        self.cluster_manager = Some(cm);
+    }
 
 
     pub fn start(&self) {
@@ -266,7 +308,7 @@ impl EventBus {
                                     let callback = inner_cf.lock().unwrap().remove(&address);
                                     match callback {
                                         Some(caller) => {
-                                            caller.call((&mut mut_msg,));
+                                            caller.call((&mut_msg,));
                                         },
                                         None => {}
                                     }

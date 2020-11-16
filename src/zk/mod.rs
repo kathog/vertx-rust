@@ -49,7 +49,6 @@ struct ZKSyncMapKeyValue {
 
 struct ZookeeperClusterManager {
 
-    vertx: Option<Arc<Vertx>>,
     node_id: String,
     nodes: Arc<Mutex<Vec<String>>>,
     ha_infos: Arc<Mutex<Vec<ClusterNodeInfo>>>,
@@ -64,7 +63,6 @@ impl ZookeeperClusterManager {
         let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |x| {}).unwrap();
         ZookeeperClusterManager {
             nodes : Arc::new(Mutex::new(Vec::new())),
-            vertx: None,
             node_id: Uuid::new_v4().to_string(),
             ha_infos: Arc::new(Mutex::new(Vec::new())),
             subs: Arc::new(Mutex::new(MultiMap::new())),
@@ -76,10 +74,6 @@ impl ZookeeperClusterManager {
 
 
 impl ClusterManager for ZookeeperClusterManager {
-
-    fn set_vertx(&mut self, vertx: Arc<Vertx>) {
-        self.vertx = Some(vertx);
-    }
 
     fn get_node_id(&self) -> String {
         self.node_id.clone()

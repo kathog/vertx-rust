@@ -3,24 +3,18 @@ extern crate jvm_macro;
 extern crate jvm_serializable;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate log;
+use log::{debug, info};
 
 #[cfg(test)]
 mod tests {
 
-    #[path = "../src/lib.rs"]
     extern crate vertx_rust;
     use vertx_rust::vertx::*;
     use std::sync::Arc;
-    use std::convert::TryFrom;
-    use rustc_serialize::base64::FromBase64;
-    use core::convert::TryInto;
-    use serde_json::*;
-    use serde_json::*;
     use serde::{Serialize, Deserialize};
-    use std::sync::Mutex;
-    use std::sync::RwLock;
     use jvm_serializable::java::io::*;
-    use futures::StreamExt;
     use tokio::net::TcpListener;
     use tokio::prelude::*;
 
@@ -39,7 +33,7 @@ mod tests {
                 let mut buf = [0; 1024];
 
                 loop {
-                    let n = match socket.read(&mut buf).await {
+                    let _n = match socket.read(&mut buf).await {
                         Ok(n) if n == 0 => return,
                         Ok(n) => request.extend(&buf[0..n]),
                         Err(e) => {
@@ -96,17 +90,17 @@ Content-Length: 14
     fn vertx_test() {
 
         lazy_static! {
-            static ref vertx : Vertx = {
+            static ref VERTX : Vertx::<NoClusterManager> = {
                 let vertx_options = VertxOptions::default();
-                println!("{:?}", vertx_options);
+                debug!("{:?}", vertx_options);
                 Vertx::new(vertx_options)
             };
-            static ref event_bus : Arc<EventBus> = vertx.event_bus();
+            static ref EVENT_BUS : Arc<EventBus> = VERTX.event_bus();
 
-            static ref count : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            static ref COUNT : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         }
 
-        event_bus.consumer("consume1", |m| {
+        EVENT_BUS.consumer("consume1", |m| {
             let body = m.body();
             // println!("{:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
@@ -116,9 +110,9 @@ Content-Length: 14
         for i in 0..100000 {
             // event_bus.request("consume1", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            event_bus.request_with_callback("consume1", format!("regest: {}", i), move |m| {
-                let body = m.body();
-                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            EVENT_BUS.request_with_callback("consume1", format!("regest: {}", i), move |m| {
+                let _body = m.body();
+                COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 // println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
             });
         }
@@ -126,7 +120,7 @@ Content-Length: 14
         // vertx.start();
         // std::thread::sleep(std::time::Duration::from_millis(1));
         let elapsed = time.elapsed();
-        println!("count {:?}, time: {:?}", count.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
-        println!("avg time: {:?} ns", (&elapsed.as_nanos() / count.load(std::sync::atomic::Ordering::SeqCst) as u128));
+        info!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
+        info!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
     }
 }

@@ -103,6 +103,19 @@ impl ClusterManager for ZookeeperClusterManager {
     }
 
     fn join(&mut self) {
+        self.watch_nodes();
+        self.watch_ha_info();
+        self.watch_subs();
+    }
+
+    fn leave(&self) {
+        unimplemented!()
+    }
+}
+
+
+impl ZookeeperClusterManager {
+    fn watch_nodes(&mut self) {
         let mut nodes_cache = PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH).unwrap();
         match nodes_cache.start() {
             Err(err) => {
@@ -133,7 +146,11 @@ impl ClusterManager for ZookeeperClusterManager {
                 _ => {}
             }
         });
+    }
+}
 
+impl ZookeeperClusterManager {
+    fn watch_ha_info(&mut self) {
         let mut ha_info_cache = PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_HA_INFO).unwrap();
         match ha_info_cache.start() {
             Err(err) => {
@@ -150,7 +167,7 @@ impl ClusterManager for ZookeeperClusterManager {
                     let bytes_of_data = data.0.clone();
                     let bytes_as_string = String::from_utf8_lossy(&bytes_of_data);
                     let idx = bytes_as_string.rfind("$");
-                    let bytes_as_string = &bytes_as_string[idx.unwrap()+1..];
+                    let bytes_as_string = &bytes_as_string[idx.unwrap() + 1..];
                     let mut bytes_as_string_split = bytes_as_string.split("t\u{0}U");
                     let key_value = ZKSyncMapKeyValue {
                         key: Object {
@@ -161,25 +178,25 @@ impl ClusterManager for ZookeeperClusterManager {
 
                     debug!("{:?}", key_value);
                 },
-                PathChildrenCacheEvent::ChildRemoved(id) => {
-
-                }
+                PathChildrenCacheEvent::ChildRemoved(id) => {}
                 _ => {}
             }
         });
+    }
+}
 
-
+impl ZookeeperClusterManager {
+    fn watch_subs(&mut self) {
         let mut zk_path_subs = PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_SUBS).unwrap();
         zk_path_subs.start().unwrap();
-        let subs : Arc<Mutex<Vec<Mutex<PathChildrenCache>>>> = Arc::new(Mutex::new(Vec::new()));
+        let subs: Arc<Mutex<Vec<Mutex<PathChildrenCache>>>> = Arc::new(Mutex::new(Vec::new()));
         let clone_subs = subs.clone();
 
-        let (sender, receiver) : (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
+        let (sender, receiver): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let zk_clone = self.zookeeper.clone();
-        let subs_clone  = self.subs.clone();
+        let subs_clone = self.subs.clone();
         std::thread::spawn(move || {
             loop {
-
                 match receiver.recv() {
                     Ok(recv) => {
                         let inner_subs = Mutex::new(PathChildrenCache::new(zk_clone.clone(), &recv).unwrap());
@@ -192,12 +209,11 @@ impl ClusterManager for ZookeeperClusterManager {
                                 PathChildrenCacheEvent::ChildAdded(id, data) => {
                                     let msg_addr = recv.replace("/asyncMultiMap/__vertx.subs/", "");
                                     let data_as_byte = &data.0;
-                                    let mut deser = ObjectInputStream{};
-                                    let node : ClusterNodeInfo = deser.read_object(data_as_byte.clone());
+                                    let mut deser = ObjectInputStream {};
+                                    let node: ClusterNodeInfo = deser.read_object(data_as_byte.clone());
                                     debug!("{:?}", node);
                                     let mut i_subs = inner_subs_clone.lock().unwrap();
                                     i_subs.insert(msg_addr, node);
-
                                 },
                                 PathChildrenCacheEvent::ChildRemoved(id) => {
                                     let id = id.replace("/asyncMultiMap/__vertx.subs/", "");
@@ -216,14 +232,12 @@ impl ClusterManager for ZookeeperClusterManager {
                                 },
                                 _ => {}
                             }
-
                         });
 
                         clone_subs.lock().unwrap().push(inner_subs);
                     },
                     Err(e) => {}
                 }
-
             }
         });
 
@@ -237,9 +251,5 @@ impl ClusterManager for ZookeeperClusterManager {
                 _ => {}
             }
         });
-    }
-
-    fn leave(&self) {
-        unimplemented!()
     }
 }

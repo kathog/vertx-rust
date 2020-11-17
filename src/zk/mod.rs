@@ -46,7 +46,7 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         
         let time = std::time::Instant::now();
-        for i in 0..10 {
+        for i in 0..1 {
             // EVENT_BUS.request("test.01", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             println!("request: {:?}", i);

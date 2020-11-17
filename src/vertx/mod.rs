@@ -27,6 +27,7 @@ use std::sync::Once;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
+use std::convert::TryInto;
 
 
 static EV_INIT: Once = Once::new();
@@ -159,7 +160,6 @@ pub struct Message {
     address: Option<String>,
     replay: Option<String>,
     body: Arc<Vec<u8>>,
-    message_size: usize,
     protocol_version: i32,
     system_codec_id: i32,
     send: bool,
@@ -183,6 +183,40 @@ impl Message {
             inner_body.clear();
             inner_body.append(&mut data);
         }
+    }
+}
+
+
+impl Message {
+
+    pub fn to_vec(&self) -> Result<Vec<u8>, &str> {
+        let mut data = vec![];
+        data.push(1);
+        data.push(12);
+        data.push(0);
+        let address = self.address.clone().expect("Replay message not found!");
+        data.extend_from_slice(&(address.len() as i32).to_be_bytes());
+        data.extend_from_slice(address.as_bytes());
+        match self.replay.clone() {
+            Some(addr) => {
+                data.extend_from_slice(&(addr.len() as i32).to_be_bytes());
+                data.extend_from_slice(addr.as_bytes());
+            }, 
+            None => {
+                data.extend_from_slice(&(0 as i32).to_be_bytes());
+            }
+        }    
+        data.extend_from_slice(&self.port.to_be_bytes());
+        data.extend_from_slice(&(self.host.len() as i32).to_be_bytes());
+        data.extend_from_slice(self.host.as_bytes());
+        data.extend_from_slice(&(4 as i32).to_be_bytes());
+        data.extend_from_slice(&(self.body.len() as i32).to_be_bytes());
+        data.extend_from_slice(self.body.as_slice());
+        let len = ((data.len()) as i32).to_be_bytes();
+        for idx in 0..4 {
+            data.insert(idx, len[idx]);
+        }
+        return Ok(data);
     }
 }
 
@@ -296,7 +330,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             loop {
                 match receiver.recv() {
                     Ok(msg) => {
-                        debug!("{:?}", msg);
+                        trace!("{:?}", msg);
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
@@ -306,13 +340,13 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                             let mut mut_msg = msg;
                             match &mut_msg.address {
                                 Some(address) => {
-                                    info!("msg: {:?}", address);
+                                    debug!("msg: {:?}", address);
                                     // invoke function from consumer
                                     let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm) };
                                     match manager {
                                         // ClusterManager
                                         Some(cm) => {
-                                            info!("manager: {:?}", cm.get_subs().lock().unwrap().len());
+                                            debug!("manager: {:?}", cm.get_subs().lock().unwrap().len());
                                             let subs = cm.get_subs();
                                             let nodes = subs.lock().unwrap();
                                             let nodes_lock = nodes.get_vec(address);
@@ -320,20 +354,34 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                 Some(n) => {
                                                     if n.len() == 0 {
                                                         warn!("subs not found");
+                                                    } else {
+                                                        let mut rng = thread_rng();
+                                                        let idx: usize = rng.gen_range(0, n.len());
+                                                        let node = &n[idx];
+                                                        let host = node.serverID.host.clone();
+                                                        let port = node.serverID.port.clone();
+                                                        debug!("{:?}", node);
+                                                        RUNTIME.spawn(async move {
+                                                            match TcpStream::connect(format!("{}:{}", host, port)).await {
+                                                                Ok(stream) => {
+                                                                    debug!("{:?}", stream);
+                                                                    let mut stream = stream;
+                                                                    match stream.write_all(&mut_msg.to_vec().unwrap()).await {
+                                                                        Ok(_r) => {
+                                                                            let mut response = [0u8;1];
+                                                                            let _ = stream.read(&mut response);
+                                                                        },
+                                                                        Err(e) => {
+                                                                            warn!("Error in send message: {:?}", e);
+                                                                        }
+                                                                    }
+                                                                },
+                                                                Err(e) => {
+                                                                    warn!("Error in send message: {:?}", e);
+                                                                }
+                                                            }
+                                                        });        
                                                     }
-                                                    let mut rng = thread_rng();
-                                                    let idx: usize = rng.gen_range(0, n.len());
-                                                    let node = &n[idx];
-                                                    let host = node.serverID.host.clone();
-                                                    let port = node.serverID.port.clone();
-                                                    info!("{:?}", node);
-                                                    RUNTIME.spawn(async move {
-                                                        let mut stream = TcpStream::connect(format!("{}:{}", host, port)).await.unwrap();
-                                                        info!("{:?}", stream);
-                                                        stream.write_all(b"hello world!").await.unwrap();
-                                                        let mut response = [0u8;1];
-                                                        let _ = stream.read(&mut response);
-                                                    });
                                                 },
                                                 None => {}
                                             }
@@ -407,6 +455,8 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             address: Some(addr.clone()),
             replay: Some(format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string())),
             body: Arc::new(body),
+            host: "localhost".to_string(),
+            port: 4445,
             ..Default::default()
         };
         let local_cons = self.callback_functions.clone();

@@ -95,7 +95,7 @@ Content-Length: 14
                 debug!("{:?}", vertx_options);
                 Vertx::new(vertx_options)
             };
-            static ref EVENT_BUS : Arc<EventBus> = VERTX.event_bus();
+            static ref EVENT_BUS : Arc<EventBus::<NoClusterManager>> = VERTX.event_bus();
 
             static ref COUNT : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         }
@@ -120,7 +120,7 @@ Content-Length: 14
         // vertx.start();
         // std::thread::sleep(std::time::Duration::from_millis(1));
         let elapsed = time.elapsed();
-        info!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
-        info!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
+        println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
+        println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
     }
 }

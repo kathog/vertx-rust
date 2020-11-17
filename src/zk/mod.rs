@@ -1,4 +1,3 @@
-use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo};
 use std::sync::{Arc, Mutex};
 use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
@@ -6,18 +5,64 @@ use multimap::MultiMap;
 use uuid::Uuid;
 use zookeeper::ZooKeeper;
 use tokio::time::Duration;
-use log::{error, info, LevelFilter, warn};
+use log::{error, info, LevelFilter, warn, debug};
 use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
 use std::alloc::dealloc;
 use std::collections::hash_map::RandomState;
-
+use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
 
 #[cfg(test)]
 mod tests {
     use crate::zk::ZookeeperClusterManager;
     use simple_logger::SimpleLogger;
     use tokio::time::Duration;
-    use crate::vertx::ClusterManager;
+    use std::sync::Arc;
+    use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
+    use log::{error, info, debug};
+
+    #[test]
+    fn zk_vertx() {
+        SimpleLogger::new().init().unwrap();
+
+        lazy_static! {
+            static ref VERTX : Vertx::<ZookeeperClusterManager> = {
+                let vertx_options = VertxOptions::default();
+                debug!("{:?}", vertx_options);
+                let mut v = Vertx::new(vertx_options);
+                let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
+                v.set_cluster_manager(zk);
+                return v;
+            };
+            static ref EVENT_BUS : Arc<EventBus::<ZookeeperClusterManager>> = VERTX.event_bus();
+
+            static ref COUNT : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        }
+        EVENT_BUS.consumer("consume1", |m| {
+            let body = m.body();
+            m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
+        });
+        
+        // VERTX.start();
+        std::thread::sleep(Duration::from_secs(2));
+        
+        let time = std::time::Instant::now();
+        for i in 0..10 {
+            // EVENT_BUS.request("test.01", format!("regest: {}", i));
+            // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            println!("request: {:?}", i);
+            EVENT_BUS.request_with_callback("test.01", format!("regest: {}", i), move |m| {
+                let _body = m.body();
+                COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
+            });
+        }
+        
+        let elapsed = time.elapsed();
+        std::thread::sleep(Duration::from_secs(1));
+        println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
+        // println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
+
+    }
 
     #[test]
     fn zk_init () {

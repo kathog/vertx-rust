@@ -15,11 +15,27 @@ use std::{
     thread::JoinHandle,
     panic::*,
 };
-use log::{info, debug};
+use log::{info, debug, trace, warn};
 use multimap::MultiMap;
 use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
 use std::collections::hash_map::RandomState;
+use serde::export::PhantomData;
+use rand::thread_rng;
+use rand::Rng;
+use std::sync::Once;
+use tokio::net::TcpStream;
+use tokio::prelude::*;
+use tokio::runtime::Runtime;
+
+
+static EV_INIT: Once = Once::new();
+
+lazy_static! {
+    static ref RUNTIME: Runtime = {
+        Runtime::new().unwrap()
+    };
+}
 
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
 pub struct ServerID {
@@ -105,16 +121,6 @@ impl Default for VertxOptions {
     }
 }
 
-trait TEventBusOptions<T: ClusterManager> {
-
-}
-
-impl <T: ClusterManager>TEventBusOptions<T> for EventBusOptions {
-
-
-
-}
-
 #[derive(Debug, Clone)]
 pub struct EventBusOptions {
 
@@ -148,29 +154,20 @@ impl Default for EventBusOptions {
     }
 }
 
-/*
-int message_size;
-int protocol_version;
-int system_codec_id;
-bool send;
-std::string address;
-std::string replay;
-int port;
-std::string host;
-int headers;
-std::any _body;
-mutable std::any _reply;
-bool request;
-MsgCallback func;
-MsgCallback callbackFunc;
-bool local = false;
-*/
-
-// #[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Message {
     address: Option<String>,
-    callback_address: String,
+    replay: Option<String>,
     body: Arc<Vec<u8>>,
+    message_size: usize,
+    protocol_version: i32,
+    system_codec_id: i32,
+    send: bool,
+    port: i32,
+    host: String,
+    headers: i32,
+    request: bool,
+    local: bool
 }
 
 impl Message {
@@ -186,7 +183,6 @@ impl Message {
             inner_body.clear();
             inner_body.append(&mut data);
         }
-
     }
 }
 
@@ -195,91 +191,107 @@ impl Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Message")
             .field("address", &self.address)
-            .field("callback_address", &self.callback_address)
+            .field("replay", &self.replay)
             .field("body", &self.body)
             .finish()
     }
 }
 
 
-pub struct Vertx<CM: ClusterManager> {
+pub struct Vertx<CM:'static + ClusterManager + Send + Sync> {
     options : VertxOptions,
     worker_pool: ThreadPool,
-    event_bus: Arc<EventBus>,
-    cluster_manager: Option<CM>
+    event_bus: Arc<EventBus<CM>>,
+    ph: PhantomData<CM>
 }
 
-impl <CM: ClusterManager>Vertx<CM> {
+impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
 
     pub fn new (options: VertxOptions) -> Vertx<CM> {
         let worker_pool = ThreadPoolBuilder::new().num_threads(options.worker_pool_size).build().unwrap();
-        let event_bus = EventBus::new(options.event_bus_options.clone());
+        let event_bus = EventBus::<CM>::new(options.event_bus_options.clone());
         return Vertx {
             options,
             worker_pool,
             event_bus : Arc::new(event_bus),
-            cluster_manager: None
+            ph: PhantomData,
         };
     }
 
     pub fn set_cluster_manager(&mut self, cm: CM) {
-        self.cluster_manager = Some(cm);
+        debug!("set_cluster_manager: {:?}", cm.get_nodes());
+        Arc::get_mut(&mut self.event_bus).unwrap().set_cluster_manager(cm);
     }
 
 
     pub fn start(&self) {
-        self.event_bus.start();
+        
     }
 
-    pub fn event_bus(&self) -> Arc<EventBus> {
+    pub fn event_bus(&self) -> Arc<EventBus<CM>> {
+        EV_INIT.call_once(|| {
+            let mut ev = self.event_bus.clone();
+            unsafe {
+                let opt_ev = Arc::get_mut_unchecked(&mut ev);
+                opt_ev.init();
+            }
+        });
         return self.event_bus.clone();
     }
-
 }
 
-pub struct EventBus {
+pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     options : EventBusOptions,
     event_bus_pool: Arc<ThreadPool>,
     consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message) + Send + Sync>>>,
     callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message) + Send + Sync + UnwindSafe>>>>,
     sender: Mutex<Sender<Message>>,
     receiver_joiner : Arc<JoinHandle<()>>,
+    cluster_manager: Arc<Option<CM>>
 }
 
-impl EventBus {
+impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
-    pub fn new (options: EventBusOptions) -> EventBus {
+    pub fn new (options: EventBusOptions) -> EventBus<CM> {
         let event_bus_pool = ThreadPoolBuilder::new().num_threads(options.event_bus_pool_size).build().unwrap();
         let (sender, _receiver) : (Sender<Message>, Receiver<Message>) = channel();
         let receiver_joiner = std::thread::spawn(||{});
-        let mut ev = EventBus {
+        let ev = EventBus {
             options,
             event_bus_pool : Arc::new(event_bus_pool),
             consumers: Arc::new(HashMap::new()),
             callback_functions: Arc::new(Mutex::new(HashMap::new())),
             sender : Mutex::new(sender),
             receiver_joiner : Arc::new(receiver_joiner),
+            cluster_manager: Arc::new(None),
         };
-        ev.init();
         return ev;
     }
 
-    fn start (&self) {
+    fn set_cluster_manager(&mut self, cm: CM) {
+        let mut m = cm;
+        m.join();
+        self.cluster_manager = Arc::new(Some(m));    
+    }
+
+    fn start (&mut self) {
         let joiner = &self.receiver_joiner;
         let h = joiner.clone();
         unsafe {
             let val :JoinHandle<()> = std::ptr::read(&*h);
-            val.join().unwrap();
+            // val.join().unwrap();
         }
     }
 
-    fn init(&mut self)  {
+    fn init(&mut self) {
         let (sender, receiver) : (Sender<Message>, Receiver<Message>) = channel();
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();
         let pool = self.event_bus_pool.clone();
         let local_sender = self.sender.lock().unwrap().clone();
+        let local_cm = self.cluster_manager.clone();
+
         let joiner = std::thread::spawn(move || -> (){
             loop {
                 match receiver.recv() {
@@ -288,23 +300,63 @@ impl EventBus {
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
-
+                        let mut inner_cm = local_cm.clone();
+                        
                         pool.spawn(move || {
                             let mut mut_msg = msg;
                             match &mut_msg.address {
                                 Some(address) => {
-                                    let callback = inner_consummers.get(address);
-                                    match callback {
-                                        Some(caller) => {
-                                            caller.call((&mut mut_msg,));
-                                            mut_msg.address = None;
-                                            inner_sender.send(mut_msg).unwrap();
+                                    info!("msg: {:?}", address);
+                                    // invoke function from consumer
+                                    let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm) };
+                                    match manager {
+                                        // ClusterManager
+                                        Some(cm) => {
+                                            info!("manager: {:?}", cm.get_subs().lock().unwrap().len());
+                                            let subs = cm.get_subs();
+                                            let nodes = subs.lock().unwrap();
+                                            let nodes_lock = nodes.get_vec(address);
+                                            match nodes_lock {
+                                                Some(n) => {
+                                                    if n.len() == 0 {
+                                                        warn!("subs not found");
+                                                    }
+                                                    let mut rng = thread_rng();
+                                                    let idx: usize = rng.gen_range(0, n.len());
+                                                    let node = &n[idx];
+                                                    let host = node.serverID.host.clone();
+                                                    let port = node.serverID.port.clone();
+                                                    info!("{:?}", node);
+                                                    RUNTIME.spawn(async move {
+                                                        let mut stream = TcpStream::connect(format!("{}:{}", host, port)).await.unwrap();
+                                                        info!("{:?}", stream);
+                                                        stream.write_all(b"hello world!").await.unwrap();
+                                                        let mut response = [0u8;1];
+                                                        let _ = stream.read(&mut response);
+                                                    });
+                                                },
+                                                None => {}
+                                            }
+
                                         },
-                                        None => {}
+                                        None => {
+                                            // NoClusterManager
+                                            let callback = inner_consummers.get(address);
+                                            debug!("manager not found");
+                                            match callback {
+                                                Some(caller) => {
+                                                    caller.call((&mut mut_msg,));
+                                                    mut_msg.address = None;
+                                                    inner_sender.send(mut_msg).unwrap();
+                                                },
+                                                None => {}
+                                            }
+                                        }
                                     }
                                 },
                                 None => {
-                                    let address = mut_msg.callback_address.clone();
+                                    // invoke callback function from message
+                                    let address = mut_msg.replay.clone().unwrap();
                                     let callback = inner_cf.lock().unwrap().remove(&address);
                                     match callback {
                                         Some(caller) => {
@@ -318,7 +370,7 @@ impl EventBus {
 
                     },
                     Err(_err) => {
-                        // println!("{:?}", err);
+                        println!("{:?}", _err);
                     }
                 }
             }
@@ -339,8 +391,9 @@ impl EventBus {
         let body = request.as_bytes().to_vec();
         let message = Message {
             address: Some(addr.clone()),
-            callback_address: uuid::Uuid::new_v4().to_string(),
+            replay: None,
             body: Arc::new(body),
+            ..Default::default()
         };
         let local_sender = self.sender.lock().unwrap().clone();
         local_sender.send(message).unwrap();
@@ -352,11 +405,12 @@ impl EventBus {
         let body = request.as_bytes().to_vec();
         let message = Message {
             address: Some(addr.clone()),
-            callback_address: format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string()),
+            replay: Some(format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string())),
             body: Arc::new(body),
+            ..Default::default()
         };
         let local_cons = self.callback_functions.clone();
-        local_cons.lock().unwrap().insert(message.callback_address.clone(), Box::new(op));
+        local_cons.lock().unwrap().insert(message.replay.clone().unwrap(), Box::new(op));
         let local_sender = self.sender.lock().unwrap().clone();
         local_sender.send(message).unwrap();
     }

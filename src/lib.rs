@@ -6,6 +6,8 @@ extern crate hypospray;
 #[macro_use]
 extern crate jvm_macro;
 extern crate jvm_serializable;
+#[macro_use]
+extern crate lazy_static;
 
 
 pub mod vertx;

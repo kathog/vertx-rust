@@ -14,7 +14,7 @@ fn vertx(_c: &mut Criterion) {
             // println!("{:?}", vertx_options);
             Vertx::new(vertx_options)
         };
-        static ref EVENT_BUS : Arc<EventBus> = VERTX.event_bus();
+        static ref EVENT_BUS : Arc<EventBus::<NoClusterManager>> = VERTX.event_bus();
     }
 
     EVENT_BUS.consumer("consume1", |m| {

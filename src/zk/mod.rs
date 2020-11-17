@@ -41,12 +41,9 @@ mod tests {
             let body = m.body();
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
         });
-        
-        // VERTX.start();
-        std::thread::sleep(Duration::from_secs(2));
-        
+        std::thread::sleep(Duration::from_secs(1));
         let time = std::time::Instant::now();
-        for i in 0..1 {
+        for i in 0..10 {
             // EVENT_BUS.request("test.01", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             println!("request: {:?}", i);
@@ -140,6 +137,10 @@ impl ClusterManager for ZookeeperClusterManager {
         self.watch_nodes();
         self.watch_ha_info();
         self.watch_subs();
+    }
+
+    fn set_cluster_node_info(&mut self, _node: ClusterNodeInfo) {
+       
     }
 
     fn leave(&self) {

@@ -55,6 +55,8 @@ pub struct ClusterNodeInfo {
 
 pub trait ClusterManager {
 
+    fn set_cluster_node_info(&mut self, node: ClusterNodeInfo);
+
     fn get_node_id(&self) -> String;
 
     fn get_nodes(&self) -> Vec<String>;
@@ -94,6 +96,10 @@ impl ClusterManager for NoClusterManager {
     }
 
     fn leave(&self) {
+        unimplemented!()
+    }
+
+    fn set_cluster_node_info(&mut self, _node: ClusterNodeInfo) {
         unimplemented!()
     }
 }
@@ -323,7 +329,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let h = joiner.clone();
         unsafe {
             let val :JoinHandle<()> = std::ptr::read(&*h);
-            // val.join().unwrap();
+            val.join().unwrap();
         }
     }
 
@@ -334,18 +340,32 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let local_cf = self.callback_functions.clone();
         let pool = self.event_bus_pool.clone();
         let local_sender = self.sender.lock().unwrap().clone();
-        let local_cm = self.cluster_manager.clone();
+        
 
         let mut net_server = net::NetServer::new();
-        net_server.listen(self.options.vertx_port, |req| {
+        net_server.listen_for_message(self.options.vertx_port, |req| {
             let resp = vec![];
             info!("{:?}", String::from_utf8_lossy(req));
             return resp;
         });
 
         self.event_bus_port = net_server.port;
+        let opt_cm = Arc::get_mut(&mut self.cluster_manager).unwrap();
+        match opt_cm {
+            Some(cm) => {
+                cm.set_cluster_node_info(ClusterNodeInfo {
+                    nodeId : cm.get_node_id(),
+                    serverID: ServerID {
+                        host: self.options.vertx_host.clone(),
+                        port: self.event_bus_port as i32
+                    }
+                });
+            },
+            None => {}
+        }
         info!("start event bus on: {}:{}", self.options.vertx_host, self.event_bus_port);
 
+        let local_cm = self.cluster_manager.clone();
         let joiner = std::thread::spawn(move || -> (){
             loop {
                 match receiver.recv() {
@@ -470,11 +490,11 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     pub fn request_with_callback<OP> (&self, address: &str, request: String, op: OP)
         where OP : Fn(& Message,) + Send + 'static + Sync + UnwindSafe, {
         let addr = address.to_owned();
-        let body = request.as_bytes().to_vec();
+        let body0 = request.as_bytes().to_vec();
         let message = Message {
             address: Some(addr.clone()),
             replay: Some(format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string())),
-            body: Arc::new(body),
+            body: Arc::new(body0),
             host: self.options.vertx_host.clone(),
             port: self.event_bus_port as i32,
             ..Default::default()

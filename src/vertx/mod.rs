@@ -187,6 +187,13 @@ impl Message {
     }
 }
 
+impl From<Vec<u8>> for Message {
+    fn from(msg: Vec<u8>) -> Self {
+        Message {
+            ..Default::default()
+        }
+    }
+}
 
 impl Message {
 
@@ -337,6 +344,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         });
 
         self.event_bus_port = net_server.port;
+        info!("start event bus on: {}:{}", self.options.vertx_host, self.event_bus_port);
 
         let joiner = std::thread::spawn(move || -> (){
             loop {

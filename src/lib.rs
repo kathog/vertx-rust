@@ -11,6 +11,7 @@ extern crate lazy_static;
 
 
 pub mod vertx;
+pub mod net;
 
 #[cfg(feature = "zk")]
 pub mod zk;

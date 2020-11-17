@@ -28,12 +28,13 @@ use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use std::convert::TryInto;
+use crate::net;
 
 
 static EV_INIT: Once = Once::new();
 
 lazy_static! {
-    static ref RUNTIME: Runtime = {
+    pub static ref RUNTIME: Runtime = {
         Runtime::new().unwrap()
     };
 }
@@ -281,7 +282,8 @@ pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message) + Send + Sync + UnwindSafe>>>>,
     sender: Mutex<Sender<Message>>,
     receiver_joiner : Arc<JoinHandle<()>>,
-    cluster_manager: Arc<Option<CM>>
+    cluster_manager: Arc<Option<CM>>,
+    event_bus_port: u16,
 }
 
 impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
@@ -298,6 +300,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             sender : Mutex::new(sender),
             receiver_joiner : Arc::new(receiver_joiner),
             cluster_manager: Arc::new(None),
+            event_bus_port: 0,
         };
         return ev;
     }
@@ -325,6 +328,15 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let pool = self.event_bus_pool.clone();
         let local_sender = self.sender.lock().unwrap().clone();
         let local_cm = self.cluster_manager.clone();
+
+        let mut net_server = net::NetServer::new();
+        net_server.listen(self.options.vertx_port, |req| {
+            let resp = vec![];
+            info!("{:?}", String::from_utf8_lossy(req));
+            return resp;
+        });
+
+        self.event_bus_port = net_server.port;
 
         let joiner = std::thread::spawn(move || -> (){
             loop {
@@ -455,8 +467,8 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             address: Some(addr.clone()),
             replay: Some(format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string())),
             body: Arc::new(body),
-            host: "localhost".to_string(),
-            port: 4445,
+            host: self.options.vertx_host.clone(),
+            port: self.event_bus_port as i32,
             ..Default::default()
         };
         let local_cons = self.callback_functions.clone();

@@ -35,11 +35,11 @@ mod tests {
         let event_bus = vertx.event_bus();
         
         let ev_clone = event_bus.clone();
-        event_bus.consumer("consume1", move |m| {
+        event_bus.consumer("test.01", move |m| {
             let body = m.body();
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
 
-            ev_clone.request("test.01", format!("regest:"));
+            // ev_clone.request("test.01", format!("regest:"));
         });
         std::thread::sleep(Duration::from_secs(1));
         let time = std::time::Instant::now();
@@ -104,10 +104,10 @@ impl ZookeeperClusterManager {
 
     pub fn new (zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
         let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |x| {}).unwrap();
-        let uid = Uuid::new_v4().to_string();
+
         ZookeeperClusterManager {
             nodes : Arc::new(Mutex::new(Vec::new())),
-            node_id: String::from_utf8_lossy(&uid.as_bytes()[6..]).parse().unwrap(),
+            node_id: Uuid::new_v4().to_string(),
             ha_infos: Arc::new(Mutex::new(Vec::new())),
             subs: Arc::new(Mutex::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
@@ -117,8 +117,88 @@ impl ZookeeperClusterManager {
 
 }
 
+const head_of_data : [u8; 119] =  [0, 172, 237, 0, 5, 115, 114, 0, 54, 105, 111, 46, 118, 101, 114, 116, 120, 46, 115, 112, 105, 46, 99, 108, 117, 115, 116, 101, 114, 46, 122, 111, 111, 107, 101, 101, 112, 101, 114, 46, 105, 109, 112, 108, 46, 90, 75, 83, 121, 110, 99, 77, 97, 112, 36, 75, 101, 121, 86, 97, 108, 117, 101, 90, 158, 26, 0, 73, 105, 76, 122, 2, 0, 2, 76, 0, 3, 107, 101, 121, 116, 0, 18, 76, 106, 97, 118, 97, 47, 108, 97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 59, 76, 0, 5, 118, 97, 108, 117, 101, 113, 0, 126, 0, 1, 120, 112, 116, 0, 36];
+const middle_of_data : [u8; 3] = [116, 0, 85];
 
 impl ClusterManager for ZookeeperClusterManager {
+
+
+    fn add_sub(&self, address: String) {
+        let is_subs = self.zookeeper.exists(&format!("{}/{}", ZK_PATH_SUBS, address), false);
+        match is_subs {
+            Ok(stat) => {
+                match stat {
+                    Some(_s) => {},
+                    None => {
+                        self.zookeeper.create(&format!("{}/{}", ZK_PATH_SUBS, address),
+                                              vec![],
+                                              Acl::open_unsafe().clone(),
+                                              CreateMode::Persistent);
+                    }
+                }
+            },
+            Err(e) => {
+                error!("error on get subs: {:?}", e);
+            }
+        }
+
+        let sub_name = format!("{}:{}:{}", self.node_id, self.cluster_node.serverID.host, self.cluster_node.serverID.port);
+        let mut oos = ObjectOutputStream::new();
+        oos.write_object(&self.cluster_node);
+        let result = self.zookeeper.create(&format!("{}/{}/{}", ZK_PATH_SUBS, address, sub_name),
+                                           oos.to_byte_array(),
+                                           Acl::open_unsafe().clone(),
+                                           CreateMode::Ephemeral);
+        match result {
+            Ok(r) => {
+                debug!("Created node: {}", r);
+            },
+            Err(e) => {
+                error!("cannot create node, error {:?}", e);
+            }
+        }
+    }
+
+    fn set_cluster_node_info(&mut self, node: ClusterNodeInfo) {
+        self.cluster_node = node;
+        let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, &self.node_id),
+                                           self.cluster_node.nodeId.clone().into_bytes(),
+                                           Acl::open_unsafe().clone(),
+                                           CreateMode::Ephemeral);
+        match result {
+            Ok(r) => {
+                debug!("Created node: {}", r);
+            },
+            Err(e) => {
+                error!("cannot create node, error {:?}", e);
+            }
+        }
+
+
+        let mut data: Vec<u8> = vec![];
+        data.extend(&head_of_data);
+        data.extend(self.node_id.as_bytes());
+        data.extend(&middle_of_data);
+        data.extend(format!("{}{}{}{}{}","{\"verticles\":[],\"group\":\"__DISABLED__\",\"server_id\":{\"host\":\"",
+                            self.cluster_node.serverID.host.clone(),
+                            "\",\"port\":",
+                            self.cluster_node.serverID.port,
+                            "}}").as_bytes());
+
+        let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_HA_INFO, &self.cluster_node.nodeId),
+                                           data,
+                                           Acl::open_unsafe().clone(),
+                                           CreateMode::Ephemeral);
+        match result {
+            Ok(r) => {
+                debug!("Created node: {}", r);
+            },
+            Err(e) => {
+                error!("cannot create node, error {:?}", e);
+            }
+        }
+
+    }
 
     fn get_node_id(&self) -> String {
         self.node_id.clone()
@@ -140,48 +220,6 @@ impl ClusterManager for ZookeeperClusterManager {
         self.watch_nodes();
         self.watch_ha_info();
         self.watch_subs();
-    }
-
-    fn set_cluster_node_info(&mut self, node: ClusterNodeInfo) {
-        self.cluster_node = node;
-        let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, &self.cluster_node.nodeId),
-                                           self.cluster_node.nodeId.clone().into_bytes(),
-                                           Acl::open_unsafe().clone(),
-                                           CreateMode::Ephemeral);
-        match result {
-            Ok(r) => {
-                debug!("Created node: {}", r);
-            },
-            Err(e) => {
-                error!("cannot create node, error {:?}", e);
-            }
-        }
-
-        let head_of_data =  [0, 172, 237, 0, 5, 115, 114, 0, 54, 105, 111, 46, 118, 101, 114, 116, 120, 46, 115, 112, 105, 46, 99, 108, 117, 115, 116, 101, 114, 46, 122, 111, 111, 107, 101, 101, 112, 101, 114, 46, 105, 109, 112, 108, 46, 90, 75, 83, 121, 110, 99, 77, 97, 112, 36, 75, 101, 121, 86, 97, 108, 117, 101, 90, 158, 26, 0, 73, 105, 76, 122, 2, 0, 2, 76, 0, 3, 107, 101, 121, 116, 0, 18, 76, 106, 97, 118, 97, 47, 108, 97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 59, 76, 0, 5, 118, 97, 108, 117, 101, 113, 0, 126, 0, 1, 120, 112, 116, 0, 36, 51, 100, 52, 53, 55, 54];
-        let middle_of_data = [116, 0, 85];
-        let mut data: Vec<u8> = vec![];
-        data.extend(&head_of_data);
-        data.extend(self.cluster_node.nodeId.as_bytes());
-        data.extend(&middle_of_data);
-        data.extend(format!("{}{}{}{}{}","{\"verticles\":[],\"group\":\"__DISABLED__\",\"server_id\":{\"host\":\"",
-                            self.cluster_node.serverID.host.clone(),
-                            "\",\"port\":",
-                            self.cluster_node.serverID.port,
-                            "}}").as_bytes());
-
-        let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_HA_INFO, &self.cluster_node.nodeId),
-                                           data,
-                                           Acl::open_unsafe().clone(),
-                                           CreateMode::Ephemeral);
-        match result {
-            Ok(r) => {
-                debug!("Created node: {}", r);
-            },
-            Err(e) => {
-                error!("cannot create node, error {:?}", e);
-            }
-        }
-
     }
 
     fn leave(&self) {

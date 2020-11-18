@@ -55,6 +55,8 @@ pub struct ClusterNodeInfo {
 
 pub trait ClusterManager {
 
+    fn add_sub(&self, address: String);
+
     fn set_cluster_node_info(&mut self, node: ClusterNodeInfo);
 
     fn get_node_id(&self) -> String;
@@ -74,6 +76,13 @@ pub trait ClusterManager {
 pub struct NoClusterManager;
 
 impl ClusterManager for NoClusterManager {
+    fn add_sub(&self, _address: String) {
+        unimplemented!()
+    }
+
+    fn set_cluster_node_info(&mut self, _node: ClusterNodeInfo) {
+        unimplemented!()
+    }
 
     fn get_node_id(&self) -> String {
         unimplemented!()
@@ -96,10 +105,6 @@ impl ClusterManager for NoClusterManager {
     }
 
     fn leave(&self) {
-        unimplemented!()
-    }
-
-    fn set_cluster_node_info(&mut self, _node: ClusterNodeInfo) {
         unimplemented!()
     }
 }
@@ -472,6 +477,12 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             let mut local_cons = self.consumers.clone();
             Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::new(op));
         }
+        match self.cluster_manager.as_ref() {
+            Some(cm) => {
+                cm.add_sub(address.to_string());
+            },
+            None => {}
+        };
     }
 
     pub fn request(&self, address: &str, request: String) {

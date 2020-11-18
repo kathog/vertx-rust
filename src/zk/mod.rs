@@ -37,6 +37,9 @@ mod tests {
         let ev_clone = event_bus.clone();
         event_bus.consumer("test.01", move |m| {
             let body = m.body();
+
+            info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
+
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
 
             // ev_clone.request("test.01", format!("regest:"));
@@ -50,7 +53,7 @@ mod tests {
             event_bus.request_with_callback("test.01", format!("regest: {}", i), move |m| {
                 let _body = m.body();
                 // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
+                info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
             });
         }
         
@@ -245,7 +248,7 @@ impl ZookeeperClusterManager {
         nodes_cache.add_listener(move |event| {
             match event {
                 PathChildrenCacheEvent::ChildAdded(_id, data) => {
-                    nodes_clone.lock().unwrap().push(String::from_utf8_lossy(&data.0).to_string());
+                    nodes_clone.lock().unwrap().push(String::from_utf8(data.0.to_vec()).unwrap());
                 },
                 PathChildrenCacheEvent::ChildRemoved(id) => {
                     let id = id.replace("/cluster/nodes/", "");
@@ -294,7 +297,9 @@ impl ZookeeperClusterManager {
                         debug!("{:?}", key_value);
                     }
                 },
-                PathChildrenCacheEvent::ChildRemoved(id) => {}
+                PathChildrenCacheEvent::ChildRemoved(id) => {
+
+                }
                 _ => {}
             }
         });

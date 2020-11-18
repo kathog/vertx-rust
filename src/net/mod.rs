@@ -1,9 +1,10 @@
-use crate::vertx::RUNTIME;
+use crate::vertx::{RUNTIME, Message};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 use bytes::BytesMut;
 use log::{error, info, debug};
 use std::time::Instant;
+use crossbeam_channel::Sender;
 
 #[cfg(test)]
 mod tests {
@@ -54,16 +55,19 @@ impl NetServer {
         }
     }
 
-    pub fn listen_for_message<OP>(&mut self, port: u16,  op: OP)
-    where OP: Fn(&Vec<u8>) -> Vec<u8> + 'static + Send + Sync + Copy {
+    pub fn listen_for_message<OP>(&mut self, port: u16, sender: Sender<Message>, op: OP)
+    where OP: Fn(Vec<u8>, Sender<Message>) -> Vec<u8> + 'static + Send + Sync + Copy {
         let listener = RUNTIME.block_on(TcpListener::bind(format!("0.0.0.0:{}", port))).unwrap();
         self.port = listener.local_addr().unwrap().port();
 
+        let clonse_sender = sender.clone();
         std::thread::spawn(move || {
             loop {
+                let inner_sender = clonse_sender.clone();
                 let (mut socket, _) = RUNTIME.block_on(listener.accept()).unwrap();
                 RUNTIME.spawn(async move {               
-                    loop { 
+                    loop {
+                        let inner_sender0 = inner_sender.clone();
                         let mut size = [0; 4];
                         let mut len = 0;
                         let _n = match socket.read(&mut size).await {
@@ -95,7 +99,7 @@ impl NetServer {
                                 return;
                             }
                         } else {
-                            let data = op(&bytes_as_vec);
+                            let data = op(bytes_as_vec, inner_sender0);
                             if let Err(e) = socket.write_all(&data).await {
                                 eprintln!("failed to write to socket; err = {:?}", e);
                                 return;

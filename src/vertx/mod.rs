@@ -5,11 +5,6 @@ use std::collections::HashMap;
 use std::{
     sync::{
         Arc,
-        mpsc::{
-            channel,
-            Sender,
-            Receiver,
-        },
         Mutex,
     },
     thread::JoinHandle,
@@ -29,6 +24,8 @@ use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use std::convert::TryInto;
 use crate::net;
+use crossbeam_channel::*;
+
 
 
 static EV_INIT: Once = Once::new();
@@ -167,7 +164,7 @@ impl Default for EventBusOptions {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Message {
     address: Option<String>,
     replay: Option<String>,
@@ -188,19 +185,51 @@ impl Message {
         return self.body.clone();
     }
 
-    pub fn reply(&self, mut data: Vec<u8>) {
+    pub fn reply(&mut self, mut data: Vec<u8>) {
         unsafe {
             let mut clone_body = self.body.clone();
             let inner_body = Arc::get_mut_unchecked(&mut clone_body);
             inner_body.clear();
             inner_body.append(&mut data);
+            // self.address = self.replay.clone();
+            // self.replay = None;
         }
     }
 }
 
 impl From<Vec<u8>> for Message {
     fn from(msg: Vec<u8>) -> Self {
+        let mut idx = 3;
+        let len_addr = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap()) as usize;
+        idx += 4;
+        let address = String::from_utf8(msg[idx..idx+len_addr].to_vec()).unwrap();
+        idx += len_addr;
+        let len_replay = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap()) as usize;
+        idx += 4;
+        let mut replay = None;
+        if len_replay > 0 {
+            let replay_str = String::from_utf8(msg[idx..idx+len_addr].to_vec()).unwrap();
+            idx += len_replay;
+            replay = Some(replay_str);
+        }
+        let port = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap());
+        idx += 4;
+        let len_host = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap()) as usize;
+        idx += 4;
+        let host = String::from_utf8(msg[idx..idx+len_host].to_vec()).unwrap();
+        idx += len_host;
+        let headers = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap());
+        idx += 4;
+        let len_body = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap()) as usize;
+        idx += 4;
+        let body = msg[idx..idx+len_body].to_vec();
         Message {
+            address: Some(address.to_string()),
+            replay,
+            port,
+            host,
+            headers,
+            body: Arc::new(body),
             ..Default::default()
         }
     }
@@ -238,18 +267,6 @@ impl Message {
         return Ok(data);
     }
 }
-
-impl Debug for Message {
-
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Message")
-            .field("address", &self.address)
-            .field("replay", &self.replay)
-            .field("body", &self.body)
-            .finish()
-    }
-}
-
 
 pub struct Vertx<CM:'static + ClusterManager + Send + Sync> {
     options : VertxOptions,
@@ -308,7 +325,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
     pub fn new (options: EventBusOptions) -> EventBus<CM> {
         let event_bus_pool = ThreadPoolBuilder::new().num_threads(options.event_bus_pool_size).build().unwrap();
-        let (sender, _receiver) : (Sender<Message>, Receiver<Message>) = channel();
+        let (sender, _receiver) : (Sender<Message>, Receiver<Message>) = unbounded();
         let receiver_joiner = std::thread::spawn(||{});
         let ev = EventBus {
             options,
@@ -339,18 +356,23 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     fn init(&mut self) {
-        let (sender, receiver) : (Sender<Message>, Receiver<Message>) = channel();
+        let (sender, receiver) : (Sender<Message>, Receiver<Message>) = unbounded();
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();
         let pool = self.event_bus_pool.clone();
         let local_sender = self.sender.lock().unwrap().clone();
-        
+
+
 
         let mut net_server = net::NetServer::new();
-        net_server.listen_for_message(self.options.vertx_port, |req| {
+        net_server.listen_for_message(self.options.vertx_port, local_sender.clone(), move |req, send| {
             let resp = vec![];
-            info!("{:?}", String::from_utf8_lossy(req));
+            let msg = Message::from(req);
+            info!("{:?}", msg);
+
+            let _ = send.send(msg);
+
             return resp;
         });
 
@@ -375,7 +397,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             loop {
                 match receiver.recv() {
                     Ok(msg) => {
-                        trace!("{:?}", msg);
+                        // info!("{:?}", msg);
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
@@ -385,7 +407,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                             let mut mut_msg = msg;
                             match &mut_msg.address {
                                 Some(address) => {
-                                    debug!("msg: {:?}", address);
+                                    info!("msg: {:?}", address);
                                     // invoke function from consumer
                                     let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm) };
                                     match manager {
@@ -394,7 +416,8 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                             debug!("manager: {:?}", cm.get_subs().lock().unwrap().len());
                                             let subs = cm.get_subs();
                                             let nodes = subs.lock().unwrap();
-                                            let nodes_lock = nodes.get_vec(address);
+                                            let nodes_lock = nodes.get_vec(&address.clone());
+
                                             match nodes_lock {
                                                 Some(n) => {
                                                     if n.len() == 0 {
@@ -405,30 +428,58 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                         let node = &n[idx];
                                                         let host = node.serverID.host.clone();
                                                         let port = node.serverID.port.clone();
-                                                        debug!("{:?}", node);
-                                                        RUNTIME.spawn(async move {
-                                                            match TcpStream::connect(format!("{}:{}", host, port)).await {
-                                                                Ok(stream) => {
-                                                                    debug!("{:?}", stream);
-                                                                    let mut stream = stream;
-                                                                    match stream.write_all(&mut_msg.to_vec().unwrap()).await {
-                                                                        Ok(_r) => {
-                                                                            let mut response = [0u8;1];
-                                                                            let _ = stream.read(&mut response);
-                                                                        },
-                                                                        Err(e) => {
-                                                                            warn!("Error in send message: {:?}", e);
-                                                                        }
-                                                                    }
+
+                                                        if node.nodeId == cm.get_node_id() {
+                                                            let callback = inner_consummers.get(&address.clone());
+                                                            match callback {
+                                                                Some(caller) => {
+                                                                    caller.call((&mut mut_msg,));
+                                                                    mut_msg.address = None;
+                                                                    inner_sender.send(mut_msg).unwrap();
                                                                 },
-                                                                Err(e) => {
-                                                                    warn!("Error in send message: {:?}", e);
-                                                                }
+                                                                None => {}
                                                             }
-                                                        });        
+                                                        } else {
+
+                                                            debug!("{:?}", node);
+                                                            RUNTIME.spawn(async move {
+                                                                match TcpStream::connect(format!("{}:{}", host, port)).await {
+                                                                    Ok(stream) => {
+                                                                        debug!("{:?}", stream);
+                                                                        let mut stream = stream;
+                                                                        match stream.write_all(&mut_msg.to_vec().unwrap()).await {
+                                                                            Ok(_r) => {
+                                                                                let mut response = [0u8;1];
+                                                                                let _ = stream.read(&mut response);
+                                                                            },
+                                                                            Err(e) => {
+                                                                                warn!("Error in send message: {:?}", e);
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    Err(e) => {
+                                                                        warn!("Error in send message: {:?}", e);
+                                                                    }
+                                                                }
+                                                            });
+
+
+                                                        }
+
+
                                                     }
                                                 },
-                                                None => {}
+                                                None => {
+
+                                                    let callback = inner_cf.lock().unwrap().remove(address);
+                                                    match callback {
+                                                        Some(caller) => {
+                                                            caller.call((&mut_msg,));
+                                                        },
+                                                        None => {}
+                                                    }
+
+                                                }
                                             }
 
                                         },

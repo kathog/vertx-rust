@@ -3,6 +3,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 use bytes::BytesMut;
 use log::{error, info, debug};
+use std::time::Instant;
 
 #[cfg(test)]
 mod tests {
@@ -85,15 +86,25 @@ impl NetServer {
                             }
                         };
 
-                        let data = op(&buf.to_vec());
-    
-                        if let Err(e) = socket.write_all(&data).await {
-                            eprintln!("failed to write to socket; err = {:?}", e);
-                            return;
+                        let bytes_as_vec = buf.to_vec();
+
+                        let bytes_as_string = String::from_utf8_lossy(&bytes_as_vec);
+                        if bytes_as_string.contains("ping") {
+                            if let Err(e) = socket.write_all(b"pong").await {
+                                eprintln!("failed to write to socket; err = {:?}", e);
+                                return;
+                            }
+                        } else {
+                            let data = op(&bytes_as_vec);
+                            if let Err(e) = socket.write_all(&data).await {
+                                eprintln!("failed to write to socket; err = {:?}", e);
+                                return;
+                            }
                         }
                     }
                 });
-            }});
+            }}
+        );
     }
 
     
@@ -118,7 +129,7 @@ impl NetServer {
                                 return;
                             }
                         };
-    
+
                         let data = op(&request);
     
                         if let Err(e) = socket.write_all(&data).await {

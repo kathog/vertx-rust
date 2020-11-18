@@ -41,15 +41,15 @@ lazy_static! {
 
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
 pub struct ServerID {
-    port: i32,
-    host: String
+    pub port: i32,
+    pub host: String
 }
 
 
 #[jvm_object(io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo,1)]
 pub struct ClusterNodeInfo {
     pub nodeId: String,
-    serverID: ServerID,
+    pub serverID: ServerID,
 }
 
 

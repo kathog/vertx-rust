@@ -3,13 +3,15 @@ use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
 use multimap::MultiMap;
 use uuid::Uuid;
-use zookeeper::ZooKeeper;
+use zookeeper::{ZooKeeper, Acl};
 use tokio::time::Duration;
 use log::{error, info, LevelFilter, warn, debug};
 use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
+use zookeeper::CreateMode;
 use std::alloc::dealloc;
 use std::collections::hash_map::RandomState;
 use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
+use std::convert::TryInto;
 
 #[cfg(test)]
 mod tests {
@@ -20,26 +22,24 @@ mod tests {
     use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
     use log::{error, info, debug};
 
+
     #[test]
     fn zk_vertx() {
         SimpleLogger::new().init().unwrap();
 
-        lazy_static! {
-            static ref VERTX : Vertx::<ZookeeperClusterManager> = {
-                let vertx_options = VertxOptions::default();
-                debug!("{:?}", vertx_options);
-                let mut v = Vertx::new(vertx_options);
-                let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
-                v.set_cluster_manager(zk);
-                return v;
-            };
-            static ref EVENT_BUS : Arc<EventBus::<ZookeeperClusterManager>> = VERTX.event_bus();
-
-            static ref COUNT : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        }
-        EVENT_BUS.consumer("consume1", |m| {
+        let vertx_options = VertxOptions::default();
+        debug!("{:?}", vertx_options);
+        let mut vertx : Vertx<ZookeeperClusterManager> = Vertx::new(vertx_options);
+        let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
+        vertx.set_cluster_manager(zk);
+        let event_bus = vertx.event_bus();
+        
+        let ev_clone = event_bus.clone();
+        event_bus.consumer("consume1", move |m| {
             let body = m.body();
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
+
+            ev_clone.request("test.01", format!("regest:"));
         });
         std::thread::sleep(Duration::from_secs(1));
         let time = std::time::Instant::now();
@@ -47,16 +47,16 @@ mod tests {
             // EVENT_BUS.request("test.01", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             println!("request: {:?}", i);
-            EVENT_BUS.request_with_callback("test.01", format!("regest: {}", i), move |m| {
+            event_bus.request_with_callback("test.01", format!("regest: {}", i), move |m| {
                 let _body = m.body();
-                COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
             });
         }
         
         let elapsed = time.elapsed();
-        std::thread::sleep(Duration::from_secs(1));
-        println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
+        std::thread::park();
+        // println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
         // println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
 
     }
@@ -95,7 +95,8 @@ struct ZookeeperClusterManager {
     nodes: Arc<Mutex<Vec<String>>>,
     ha_infos: Arc<Mutex<Vec<ClusterNodeInfo>>>,
     subs: Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>,
-    zookeeper: Arc<ZooKeeper>
+    zookeeper: Arc<ZooKeeper>,
+    cluster_node: ClusterNodeInfo,
 
 }
 
@@ -103,12 +104,14 @@ impl ZookeeperClusterManager {
 
     pub fn new (zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
         let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |x| {}).unwrap();
+        let uid = Uuid::new_v4().to_string();
         ZookeeperClusterManager {
             nodes : Arc::new(Mutex::new(Vec::new())),
-            node_id: Uuid::new_v4().to_string(),
+            node_id: String::from_utf8_lossy(&uid.as_bytes()[6..]).parse().unwrap(),
             ha_infos: Arc::new(Mutex::new(Vec::new())),
             subs: Arc::new(Mutex::new(MultiMap::new())),
-            zookeeper: Arc::new(zookeeper)
+            zookeeper: Arc::new(zookeeper),
+            cluster_node: Default::default()
         }
     }
 
@@ -139,8 +142,46 @@ impl ClusterManager for ZookeeperClusterManager {
         self.watch_subs();
     }
 
-    fn set_cluster_node_info(&mut self, _node: ClusterNodeInfo) {
-       
+    fn set_cluster_node_info(&mut self, node: ClusterNodeInfo) {
+        self.cluster_node = node;
+        let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, &self.cluster_node.nodeId),
+                                           self.cluster_node.nodeId.clone().into_bytes(),
+                                           Acl::open_unsafe().clone(),
+                                           CreateMode::Ephemeral);
+        match result {
+            Ok(r) => {
+                debug!("Created node: {}", r);
+            },
+            Err(e) => {
+                error!("cannot create node, error {:?}", e);
+            }
+        }
+
+        let head_of_data =  [0, 172, 237, 0, 5, 115, 114, 0, 54, 105, 111, 46, 118, 101, 114, 116, 120, 46, 115, 112, 105, 46, 99, 108, 117, 115, 116, 101, 114, 46, 122, 111, 111, 107, 101, 101, 112, 101, 114, 46, 105, 109, 112, 108, 46, 90, 75, 83, 121, 110, 99, 77, 97, 112, 36, 75, 101, 121, 86, 97, 108, 117, 101, 90, 158, 26, 0, 73, 105, 76, 122, 2, 0, 2, 76, 0, 3, 107, 101, 121, 116, 0, 18, 76, 106, 97, 118, 97, 47, 108, 97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 59, 76, 0, 5, 118, 97, 108, 117, 101, 113, 0, 126, 0, 1, 120, 112, 116, 0, 36, 51, 100, 52, 53, 55, 54];
+        let middle_of_data = [116, 0, 85];
+        let mut data: Vec<u8> = vec![];
+        data.extend(&head_of_data);
+        data.extend(self.cluster_node.nodeId.as_bytes());
+        data.extend(&middle_of_data);
+        data.extend(format!("{}{}{}{}{}","{\"verticles\":[],\"group\":\"__DISABLED__\",\"server_id\":{\"host\":\"",
+                            self.cluster_node.serverID.host.clone(),
+                            "\",\"port\":",
+                            self.cluster_node.serverID.port,
+                            "}}").as_bytes());
+
+        let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_HA_INFO, &self.cluster_node.nodeId),
+                                           data,
+                                           Acl::open_unsafe().clone(),
+                                           CreateMode::Ephemeral);
+        match result {
+            Ok(r) => {
+                debug!("Created node: {}", r);
+            },
+            Err(e) => {
+                error!("cannot create node, error {:?}", e);
+            }
+        }
+
     }
 
     fn leave(&self) {
@@ -200,18 +241,20 @@ impl ZookeeperClusterManager {
             match event {
                 PathChildrenCacheEvent::ChildAdded(_id, data) => {
                     let bytes_of_data = data.0.clone();
-                    let bytes_as_string = String::from_utf8_lossy(&bytes_of_data);
-                    let idx = bytes_as_string.rfind("$");
-                    let bytes_as_string = &bytes_as_string[idx.unwrap() + 1..];
-                    let mut bytes_as_string_split = bytes_as_string.split("t\u{0}U");
-                    let key_value = ZKSyncMapKeyValue {
-                        key: Object {
-                            key: bytes_as_string_split.next().unwrap().to_string(),
-                            value: bytes_as_string_split.next().unwrap().to_string(),
-                        }
-                    };
+                    if !bytes_of_data.is_empty() {
+                        let bytes_as_string = String::from_utf8_lossy(&bytes_of_data);
+                        let idx = bytes_as_string.rfind("$");
+                        let bytes_as_string = &bytes_as_string[idx.unwrap() + 1..];
+                        let mut bytes_as_string_split = bytes_as_string.split("t\u{0}U");
+                        let key_value = ZKSyncMapKeyValue {
+                            key: Object {
+                                key: bytes_as_string_split.next().unwrap().to_string(),
+                                value: bytes_as_string_split.next().unwrap().to_string(),
+                            }
+                        };
 
-                    debug!("{:?}", key_value);
+                        debug!("{:?}", key_value);
+                    }
                 },
                 PathChildrenCacheEvent::ChildRemoved(id) => {}
                 _ => {}

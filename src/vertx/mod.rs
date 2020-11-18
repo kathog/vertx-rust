@@ -10,7 +10,7 @@ use std::{
     thread::JoinHandle,
     panic::*,
 };
-use log::{info, debug, trace, warn};
+use log::{info, debug, trace, warn, error};
 use multimap::MultiMap;
 use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
@@ -50,7 +50,7 @@ pub struct ClusterNodeInfo {
 }
 
 
-pub trait ClusterManager {
+pub trait ClusterManager: Send {
 
     fn add_sub(&self, address: String);
 
@@ -365,11 +365,11 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
 
 
-        let mut net_server = net::NetServer::new();
+        let mut net_server = net::NetServer::<CM>::new(None);
         net_server.listen_for_message(self.options.vertx_port, local_sender.clone(), move |req, send| {
             let resp = vec![];
             let msg = Message::from(req);
-            info!("{:?}", msg);
+            trace!("{:?}", msg);
 
             let _ = send.send(msg);
 
@@ -402,12 +402,12 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
                         let mut inner_cm = local_cm.clone();
-                        
+
                         pool.spawn(move || {
                             let mut mut_msg = msg;
                             match &mut_msg.address {
                                 Some(address) => {
-                                    info!("msg: {:?}", address);
+                                    trace!("msg: {:?}", address);
                                     // invoke function from consumer
                                     let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm) };
                                     match manager {
@@ -514,7 +514,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
                     },
                     Err(_err) => {
-                        println!("{:?}", _err);
+                        error!("{:?}", _err);
                     }
                 }
             }

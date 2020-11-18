@@ -21,6 +21,7 @@ mod tests {
     use std::sync::Arc;
     use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
     use log::{error, info, debug};
+    use crate::net::NetServer;
 
 
     #[test]
@@ -38,7 +39,7 @@ mod tests {
         event_bus.consumer("test.01", move |m| {
             let body = m.body();
 
-            info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
+            // info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
 
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
 
@@ -46,16 +47,38 @@ mod tests {
         });
         std::thread::sleep(Duration::from_secs(1));
         let time = std::time::Instant::now();
-        for i in 0..10 {
-            // EVENT_BUS.request("test.01", format!("regest: {}", i));
-            // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            println!("request: {:?}", i);
-            event_bus.request_with_callback("test.01", format!("regest: {}", i), move |m| {
+        // for i in 0..10 {
+        //     // EVENT_BUS.request("test.01", format!("regest: {}", i));
+        //     // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        //     println!("request: {:?}", i);
+        //     event_bus.request_with_callback("test.01", format!("regest: {}", i), move |m| {
+        //         let _body = m.body();
+        //         // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        //         info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
+        //     });
+        // }
+        let mut net_server = NetServer::new(Some(ev_clone));
+        net_server.listen(9091, move |req, ev| {
+            let mut resp = vec![];
+
+            ev.request_with_callback("test.01", format!("regest:"), move |m| {
                 let _body = m.body();
                 // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
+                // info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
             });
-        }
+
+            let data = r#"
+HTTP/1.1 200 OK
+content-type: application/json
+Date: Sun, 03 May 2020 07:05:15 GMT
+Content-Length: 14
+
+{"code": "UP"}
+"#.to_string();
+
+            resp.extend_from_slice(data.as_bytes());
+            resp
+        });
         
         let elapsed = time.elapsed();
         std::thread::park();

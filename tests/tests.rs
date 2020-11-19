@@ -100,7 +100,7 @@ Content-Length: 14
             static ref COUNT : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         }
 
-        EVENT_BUS.consumer("consume1", |m| {
+        EVENT_BUS.consumer("consume1", |m, _| {
             let body = m.body();
             // println!("{:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
@@ -110,7 +110,7 @@ Content-Length: 14
         for i in 0..100000 {
             // event_bus.request("consume1", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            EVENT_BUS.request_with_callback("consume1", format!("regest: {}", i), move |m| {
+            EVENT_BUS.request_with_callback("consume1", format!("regest: {}", i), move |m, _| {
                 let _body = m.body();
                 COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 // println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());

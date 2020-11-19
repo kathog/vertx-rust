@@ -38,7 +38,7 @@ mod tests {
         vertx.set_cluster_manager(zk);
         let event_bus = vertx.event_bus();
         
-        event_bus.consumer("test.01", move |m| {
+        event_bus.consumer("test.01", move |m, ev| {
             let body = m.body();
 
             // info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
@@ -52,7 +52,7 @@ mod tests {
         net_server.listen(9091, move |req, ev| {
             let mut resp = vec![];
 
-            ev.request_with_callback("test.01", format!("regest:"), move |m| {
+            ev.request_with_callback("test.01", format!("regest:"), move |m, ev| {
                 let _body = m.body();
                 // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 // info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());

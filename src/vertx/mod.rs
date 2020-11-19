@@ -25,6 +25,7 @@ use crate::net;
 use crossbeam_channel::*;
 use crate::net::NetServer;
 use std::net::Shutdown;
+use std::ops::Deref;
 
 
 static EV_INIT: Once = Once::new();
@@ -33,6 +34,8 @@ lazy_static! {
     pub static ref RUNTIME: Runtime = {
         Runtime::new().unwrap()
     };
+
+    static ref TCPS : Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
 }
 
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
@@ -402,9 +405,8 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
                         pool.spawn(move || {
                             let mut mut_msg = msg;
-                            match &mut_msg.address {
+                            match mut_msg.address.clone() {
                                 Some(address) => {
-                                    trace!("msg: {:?}", address);
                                     // invoke function from consumer
                                     let mut inner_cm0 = inner_cm.clone();
                                     let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm0) };
@@ -422,7 +424,15 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                         warn!("subs not found");
                                                     } else {
                                                         let idx = cm.next(n.len());
-                                                        let node = &n[idx];
+                                                        let mut node = n.get(idx);
+                                                        match node {
+                                                            Some(_) => {},
+                                                            None => {
+                                                                let idx = cm.next(n.len());
+                                                                node = n.get(idx);
+                                                            }
+                                                        }
+                                                        let node = node.unwrap();
                                                         let host = node.serverID.host.clone();
                                                         let port = node.serverID.port.clone();
 
@@ -437,31 +447,63 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                             }
                                                         } else {
                                                             debug!("{:?}", node);
+                                                            let node_id = node.nodeId.clone();
                                                             RUNTIME.spawn(async move {
 
-                                                                match TcpStream::connect(format!("{}:{}", host, port)).await {
-                                                                    Ok(mut stream) => {
-                                                                        match stream.write_all(&mut_msg.to_vec().unwrap()).await {
-                                                                        Ok(_r) => {
-                                                                            let mut response = [0u8; 1];
-                                                                            let _ = stream.read(&mut response);
-                                                                            let _ = stream.shutdown(Shutdown::Both);
-                                                                        },
-                                                                        Err(e) => {
-                                                                            warn!("Error in send message: {:?}", e);
+                                                                let tcp_stream = TCPS.get(&node_id);
+                                                                match tcp_stream {
+                                                                    Some(stream) => {
+                                                                        let mut stream = stream.clone();
+                                                                        unsafe {
+                                                                            let tcps= Arc::get_mut_unchecked(&mut stream);
+                                                                            match tcps.write_all(&mut_msg.to_vec().unwrap()).await {
+                                                                                Ok(_r) => {
+                                                                                    let mut response = [0u8; 1];
+                                                                                    let _ = tcps.read(&mut response);
+                                                                                },
+                                                                                Err(e) => {
+                                                                                    warn!("Error in send message: {:?}", e);
+                                                                                }
+                                                                            }
                                                                         }
-                                                                    }
+
                                                                     },
-                                                                    Err(err) => {
-                                                                        warn!("Error in send message: {:?}", err);
+
+                                                                    None => {
+
+                                                                        match TcpStream::connect(format!("{}:{}", host, port)).await {
+                                                                            Ok(mut stream) => {
+                                                                                match stream.write_all(&mut_msg.to_vec().unwrap()).await {
+                                                                                    Ok(_r) => {
+                                                                                        let mut response = [0u8; 1];
+                                                                                        let _ = stream.read(&mut response);
+                                                                                        let mut tcps = TCPS.clone();
+                                                                                        unsafe {
+                                                                                            let tcps= Arc::get_mut_unchecked(&mut tcps);
+                                                                                            tcps.insert(node_id, Arc::new(stream));
+                                                                                        }
+                                                                                    },
+                                                                                    Err(e) => {
+                                                                                        warn!("Error in send message: {:?}", e);
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            Err(err) => {
+                                                                                warn!("Error in send message: {:?}", err);
+                                                                            }
+                                                                        }
+
                                                                     }
+
                                                                 }
+
+
                                                             });
                                                         }
                                                     }
                                                 },
                                                 None => {
-                                                    let callback = inner_cf.lock().unwrap().remove(address);
+                                                    let callback = inner_cf.lock().unwrap().remove(&address);
                                                     match callback {
                                                         Some(caller) => {
                                                             caller.call((&mut_msg, ));
@@ -473,8 +515,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                         },
                                         None => {
                                             // NoClusterManager
-                                            let callback = inner_consummers.get(address);
-                                            debug!("manager not found");
+                                            let callback = inner_consummers.get(&address);
                                             match callback {
                                                 Some(caller) => {
                                                     caller.call((&mut mut_msg, ));
@@ -486,7 +527,6 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                     }
                                 },
                                 None => {
-                                    info!("{:?}", mut_msg);
                                     let address = mut_msg.replay.clone().unwrap();
                                     let callback = inner_cf.lock().unwrap().remove(&address);
                                     match callback {

@@ -36,7 +36,7 @@ mod tests {
         let mut vertx : Vertx<ZookeeperClusterManager> = Vertx::new(vertx_options);
         let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
         vertx.set_cluster_manager(zk);
-        let event_bus : &'static mut Arc<EventBus<ZookeeperClusterManager>> = Box::leak(Box::new(vertx.event_bus()));
+        let event_bus = vertx.event_bus();
         
         event_bus.consumer("test.01", move |m| {
             let body = m.body();

@@ -186,12 +186,9 @@ pub struct Message {
     body: Arc<Vec<u8>>,
     protocol_version: i32,
     system_codec_id: i32,
-    send: bool,
     port: i32,
     host: String,
     headers: i32,
-    request: bool,
-    local: bool
 }
 
 impl Message {

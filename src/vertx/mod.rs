@@ -16,8 +16,6 @@ use jvm_serializable::java::io::*;
 use serde::{Serialize, Deserialize};
 use std::collections::hash_map::RandomState;
 use serde::export::PhantomData;
-use rand::thread_rng;
-use rand::Rng;
 use std::sync::Once;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
@@ -65,11 +63,13 @@ pub trait ClusterManager: Send {
 
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
-    fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>>;
+    // fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>>;
 
     fn join(&mut self);
 
     fn leave(&self);
+
+    fn next(&self, len: usize) -> usize;
 
 }
 
@@ -100,15 +100,19 @@ impl ClusterManager for NoClusterManager {
         unimplemented!()
     }
 
-    fn get_conn(&self, _node_id: &String) -> Option<Arc<TcpStream>> {
-        unimplemented!()
-    }
+    // fn get_conn(&self, _node_id: &String) -> Option<Arc<TcpStream>> {
+    //     unimplemented!()
+    // }
 
     fn join(&mut self) {
         unimplemented!()
     }
 
     fn leave(&self) {
+        unimplemented!()
+    }
+
+    fn next(&self, len: usize) -> usize {
         unimplemented!()
     }
 }
@@ -119,7 +123,7 @@ pub struct VertxOptions {
     worker_pool_size : usize,
     vertx_host : String,
     vertx_port : u16,
-    event_bus_options : EventBusOptions,
+    pub event_bus_options : EventBusOptions,
 }
 
 
@@ -141,7 +145,7 @@ impl Default for VertxOptions {
 #[derive(Debug, Clone)]
 pub struct EventBusOptions {
 
-    event_bus_pool_size: usize,
+    pub event_bus_pool_size: usize,
     vertx_host : String,
     vertx_port : u16,
 }
@@ -389,7 +393,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             loop {
                 match receiver.recv() {
                     Ok(msg) => {
-                        // info!("{:?}", msg);
+                        trace!("{:?}", msg);
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
@@ -417,8 +421,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                     if n.len() == 0 {
                                                         warn!("subs not found");
                                                     } else {
-                                                        let mut rng = thread_rng();
-                                                        let idx: usize = rng.gen_range(0, n.len());
+                                                        let idx = cm.next(n.len());
                                                         let node = &n[idx];
                                                         let host = node.serverID.host.clone();
                                                         let port = node.serverID.port.clone();
@@ -428,20 +431,12 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                             match callback {
                                                                 Some(caller) => {
                                                                     caller.call((&mut mut_msg, ));
-                                                                    // mut_msg.address = None;
                                                                     inner_sender.send(mut_msg).unwrap();
                                                                 },
                                                                 None => {}
                                                             }
                                                         } else {
                                                             debug!("{:?}", node);
-                                                            let mut local_tcp_conn = None;
-                                                            match unsafe { Arc::get_mut_unchecked(&mut inner_cm.clone()) } {
-                                                                Some(cm) => {
-                                                                    local_tcp_conn = cm.get_conn(&cm.get_node_id());
-                                                                },
-                                                                None => {}
-                                                            }
                                                             RUNTIME.spawn(async move {
 
                                                                 match TcpStream::connect(format!("{}:{}", host, port)).await {
@@ -483,7 +478,6 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                             match callback {
                                                 Some(caller) => {
                                                     caller.call((&mut mut_msg, ));
-                                                    // mut_msg.address = None;
                                                     inner_sender.send(mut_msg).unwrap();
                                                 },
                                                 None => {}
@@ -535,7 +529,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         net_server.listen_for_message(self.options.vertx_port,  move |req, send| {
             let resp = vec![];
             let msg = Message::from(req);
-            trace!("{:?}", msg);
+            trace!("net_server => {:?}", msg);
 
             let _ = send.send(msg);
 
@@ -585,7 +579,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         };
         let local_cons = self.callback_functions.clone();
         local_cons.lock().unwrap().insert(message.replay.clone().unwrap(), Box::new(op));
-        let local_sender = self.sender.lock().unwrap().clone();
+        let local_sender = self.sender.lock().unwrap();
         local_sender.send(message).unwrap();
     }
 

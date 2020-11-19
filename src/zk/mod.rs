@@ -14,6 +14,7 @@ use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBu
 use std::convert::TryInto;
 use tokio::net::TcpStream;
 use hashbrown::HashMap;
+use std::sync::RwLock;
 
 #[cfg(test)]
 mod tests {
@@ -30,7 +31,7 @@ mod tests {
     fn zk_vertx() {
         SimpleLogger::new().init().unwrap();
 
-        let vertx_options = VertxOptions::default();
+        let mut vertx_options = VertxOptions::default();
         debug!("{:?}", vertx_options);
         let mut vertx : Vertx<ZookeeperClusterManager> = Vertx::new(vertx_options);
         let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
@@ -40,7 +41,7 @@ mod tests {
         event_bus.consumer("test.01", move |m| {
             let body = m.body();
 
-            info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
+            // info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
 
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
         });
@@ -114,6 +115,7 @@ struct ZookeeperClusterManager {
     zookeeper: Arc<ZooKeeper>,
     cluster_node: ClusterNodeInfo,
     tcp_conns: Arc<HashMap<String, Arc<TcpStream>>>,
+    cur_idx: Arc<RwLock<usize>>,
 
 }
 
@@ -129,7 +131,8 @@ impl ZookeeperClusterManager {
             subs: Arc::new(Mutex::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
             cluster_node: Default::default(),
-            tcp_conns: Arc::new(HashMap::new())
+            tcp_conns: Arc::new(HashMap::new()),
+            cur_idx: Arc::new(RwLock::new(0)),
         }
     }
 
@@ -234,12 +237,12 @@ impl ClusterManager for ZookeeperClusterManager {
         self.subs.clone()
     }
 
-    fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>> {
-        return match self.tcp_conns.get(node_id) {
-            Some(conn) => Some(conn.clone()),
-            None => None
-        }
-    }
+    // fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>> {
+    //     return match self.tcp_conns.get(node_id) {
+    //         Some(conn) => Some(conn.clone()),
+    //         None => None
+    //     }
+    // }
 
     fn join(&mut self) {
         self.watch_nodes();
@@ -249,6 +252,13 @@ impl ClusterManager for ZookeeperClusterManager {
 
     fn leave(&self) {
         unimplemented!()
+    }
+
+    fn next(&self, len: usize) -> usize {
+        let mut ci = self.cur_idx.write().unwrap();
+        let idx = *ci;
+        *ci = (*ci + 1) % len;
+        return idx;
     }
 }
 

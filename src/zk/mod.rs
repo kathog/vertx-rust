@@ -143,7 +143,7 @@ const middle_of_data : [u8; 3] = [116, 0, 85];
 
 impl ClusterManager for ZookeeperClusterManager {
 
-
+    #[inline]
     fn add_sub(&self, address: String) {
         let is_subs = self.zookeeper.exists(&format!("{}/{}", ZK_PATH_SUBS, address), false);
         match is_subs {
@@ -179,7 +179,7 @@ impl ClusterManager for ZookeeperClusterManager {
             }
         }
     }
-
+    #[inline]
     fn set_cluster_node_info(&mut self, node: ClusterNodeInfo) {
         self.cluster_node = node;
         let result = self.zookeeper.create(&format!("{}/{}", ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH, &self.node_id),
@@ -220,19 +220,21 @@ impl ClusterManager for ZookeeperClusterManager {
         }
 
     }
-
+    #[inline]
     fn get_node_id(&self) -> String {
         self.node_id.clone()
     }
-
+    #[inline]
     fn get_nodes(&self) -> Vec<String> {
         self.nodes.lock().unwrap().clone()
     }
 
+    #[inline]
     fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>> {
         self.ha_infos.clone()
     }
 
+    #[inline]
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>> {
         self.subs.clone()
     }
@@ -254,6 +256,7 @@ impl ClusterManager for ZookeeperClusterManager {
         unimplemented!()
     }
 
+    #[inline]
     fn next(&self, len: usize) -> usize {
         let mut ci = self.cur_idx.write().unwrap();
         let idx = *ci;

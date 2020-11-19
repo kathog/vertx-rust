@@ -55,15 +55,15 @@ pub struct ClusterNodeInfo {
 pub trait ClusterManager: Send {
 
     fn add_sub(&self, address: String);
-
+    #[inline]
     fn set_cluster_node_info(&mut self, node: ClusterNodeInfo);
-
+    #[inline]
     fn get_node_id(&self) -> String;
-
+    #[inline]
     fn get_nodes(&self) -> Vec<String>;
-
+    #[inline]
     fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
-
+    #[inline]
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
     // fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>>;
@@ -72,6 +72,7 @@ pub trait ClusterManager: Send {
 
     fn leave(&self);
 
+    #[inline]
     fn next(&self, len: usize) -> usize;
 
 }
@@ -195,10 +196,12 @@ pub struct Message {
 
 impl Message {
 
+    #[inline]
     pub fn body (&self) -> Arc<Vec<u8>> {
         return self.body.clone();
     }
 
+    #[inline]
     pub fn reply(&mut self, mut data: Vec<u8>) {
         unsafe {
             let mut clone_body = self.body.clone();
@@ -212,6 +215,7 @@ impl Message {
 }
 
 impl From<Vec<u8>> for Message {
+    #[inline]
     fn from(msg: Vec<u8>) -> Self {
         let mut idx = 3;
         let len_addr = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap()) as usize;
@@ -251,6 +255,7 @@ impl From<Vec<u8>> for Message {
 
 impl Message {
 
+    #[inline]
     pub fn to_vec(&self) -> Result<Vec<u8>, &str> {
         let mut data = vec![];
         data.push(1);
@@ -484,6 +489,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         self.receiver_joiner = Arc::new(joiner);
     }
 
+    #[inline]
     fn call_replay(inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message) + Send + Sync + UnwindSafe>>>>, mut_msg: &Message) {
         let address = mut_msg.replay.clone().unwrap();
         let callback = inner_cf.lock().unwrap().remove(&address);
@@ -495,6 +501,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         }
     }
 
+    #[inline]
     fn call_local_func(inner_consummers: &Arc<HashMap<String, Box<dyn Fn(&mut Message) + Send + Sync>>>, inner_sender: &Sender<Message>, mut mut_msg: &mut Message, address: &String) {
         let callback = inner_consummers.get(&address.clone());
         match callback {
@@ -506,6 +513,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         }
     }
 
+    #[inline]
     async fn get_stream(mut_msg: &mut Message, stream: &Arc<TcpStream>) {
         let mut stream = stream.clone();
         unsafe {
@@ -522,6 +530,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         }
     }
 
+    #[inline]
     async fn create_connect(mut_msg: &mut Message, host: String, port: i32, node_id: String) {
         match TcpStream::connect(format!("{}:{}", host, port)).await {
             Ok(mut stream) => {
@@ -546,6 +555,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         }
     }
 
+    #[inline]
     fn registry_in_cm(&mut self) {
         let opt_cm = Arc::get_mut(&mut self.cluster_manager).unwrap();
         match opt_cm {

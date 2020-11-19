@@ -10,8 +10,10 @@ use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
 use zookeeper::CreateMode;
 use std::alloc::dealloc;
 use std::collections::hash_map::RandomState;
-use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
+use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus, RUNTIME};
 use std::convert::TryInto;
+use tokio::net::TcpStream;
+use hashbrown::HashMap;
 
 #[cfg(test)]
 mod tests {
@@ -33,31 +35,19 @@ mod tests {
         let mut vertx : Vertx<ZookeeperClusterManager> = Vertx::new(vertx_options);
         let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
         vertx.set_cluster_manager(zk);
-        let event_bus = vertx.event_bus();
+        let event_bus : &'static mut Arc<EventBus<ZookeeperClusterManager>> = Box::leak(Box::new(vertx.event_bus()));
         
-        let ev_clone = event_bus.clone();
         event_bus.consumer("test.01", move |m| {
             let body = m.body();
 
-            // info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
+            info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
 
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
-
-            // ev_clone.request("test.01", format!("regest:"));
         });
         std::thread::sleep(Duration::from_secs(1));
         let time = std::time::Instant::now();
-        // for i in 0..10 {
-        //     // EVENT_BUS.request("test.01", format!("regest: {}", i));
-        //     // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        //     println!("request: {:?}", i);
-        //     event_bus.request_with_callback("test.01", format!("regest: {}", i), move |m| {
-        //         let _body = m.body();
-        //         // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        //         info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
-        //     });
-        // }
-        let mut net_server = NetServer::new(Some(ev_clone));
+
+        let mut net_server = NetServer::new(Some(event_bus.clone()));
         net_server.listen(9091, move |req, ev| {
             let mut resp = vec![];
 
@@ -123,6 +113,7 @@ struct ZookeeperClusterManager {
     subs: Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>,
     zookeeper: Arc<ZooKeeper>,
     cluster_node: ClusterNodeInfo,
+    tcp_conns: Arc<HashMap<String, Arc<TcpStream>>>,
 
 }
 
@@ -137,7 +128,8 @@ impl ZookeeperClusterManager {
             ha_infos: Arc::new(Mutex::new(Vec::new())),
             subs: Arc::new(Mutex::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
-            cluster_node: Default::default()
+            cluster_node: Default::default(),
+            tcp_conns: Arc::new(HashMap::new())
         }
     }
 
@@ -242,6 +234,13 @@ impl ClusterManager for ZookeeperClusterManager {
         self.subs.clone()
     }
 
+    fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>> {
+        return match self.tcp_conns.get(node_id) {
+            Some(conn) => Some(conn.clone()),
+            None => None
+        }
+    }
+
     fn join(&mut self) {
         self.watch_nodes();
         self.watch_ha_info();
@@ -336,6 +335,8 @@ impl ZookeeperClusterManager {
         let subs: Arc<Mutex<Vec<Mutex<PathChildrenCache>>>> = Arc::new(Mutex::new(Vec::new()));
         let clone_subs = subs.clone();
 
+        let clone_tcp_conns = self.tcp_conns.clone();
+
         let (sender, receiver): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let zk_clone = self.zookeeper.clone();
         let subs_clone = self.subs.clone();
@@ -347,8 +348,10 @@ impl ZookeeperClusterManager {
                         inner_subs.lock().unwrap().start().unwrap();
 
                         let inner_subs_clone = subs_clone.clone();
+                        let inner_tcp_conns = clone_tcp_conns.clone();
 
                         inner_subs.lock().unwrap().add_listener(move |ev| {
+                            let mut inner_tcp_conns0 = inner_tcp_conns.clone();
                             match ev {
                                 PathChildrenCacheEvent::ChildAdded(id, data) => {
                                     let msg_addr = recv.replace("/asyncMultiMap/__vertx.subs/", "");
@@ -357,7 +360,25 @@ impl ZookeeperClusterManager {
                                     let node: ClusterNodeInfo = deser.read_object(data_as_byte.clone());
                                     debug!("{:?}", node);
                                     let mut i_subs = inner_subs_clone.lock().unwrap();
+                                    let node_id = node.nodeId.clone();
+                                    let host = node.serverID.host.clone();
+                                    let port = node.serverID.port;
                                     i_subs.insert(msg_addr, node);
+
+                                    let tcp = RUNTIME.block_on(TcpStream::connect(format!("{}:{}", host, port)));
+                                    match tcp {
+                                        Ok(tcp) => {
+
+                                            let tcp_conn = Arc::new(tcp);
+                                            unsafe {
+                                                Arc::get_mut_unchecked(&mut inner_tcp_conns0).insert(node_id, tcp_conn);
+                                            }
+                                        },
+                                        Err(e) => {
+                                            warn!("cannot connect to server: {:?}", e);
+                                        }
+                                    }
+
                                 },
                                 PathChildrenCacheEvent::ChildRemoved(id) => {
                                     let id = id.replace("/asyncMultiMap/__vertx.subs/", "");

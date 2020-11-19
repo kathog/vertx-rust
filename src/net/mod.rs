@@ -23,10 +23,14 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
         }))
     }
 
-    pub fn listen_for_message<OP>(&mut self, port: u16, sender: Sender<Message>, op: OP)
+    pub(crate) fn listen_for_message<OP>(&mut self, port: u16, op: OP)
     where OP: Fn(Vec<u8>, Sender<Message>) -> Vec<u8> + 'static + Send + Sync + Copy {
         let listener = RUNTIME.block_on(TcpListener::bind(format!("0.0.0.0:{}", port))).unwrap();
         self.port = listener.local_addr().unwrap().port();
+
+        let ev = self.event_bus.clone();
+        let ev = ev.unwrap().clone();
+        let sender = ev.sender.lock().unwrap();
 
         let clonse_sender = sender.clone();
         std::thread::spawn(move || {

@@ -25,7 +25,8 @@ use tokio::runtime::Runtime;
 use std::convert::TryInto;
 use crate::net;
 use crossbeam_channel::*;
-
+use crate::net::NetServer;
+use std::net::Shutdown;
 
 
 static EV_INIT: Once = Once::new();
@@ -64,6 +65,8 @@ pub trait ClusterManager: Send {
 
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
+    fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>>;
+
     fn join(&mut self);
 
     fn leave(&self);
@@ -94,6 +97,10 @@ impl ClusterManager for NoClusterManager {
     }
 
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo, RandomState>>> {
+        unimplemented!()
+    }
+
+    fn get_conn(&self, _node_id: &String) -> Option<Arc<TcpStream>> {
         unimplemented!()
     }
 
@@ -191,8 +198,8 @@ impl Message {
             let inner_body = Arc::get_mut_unchecked(&mut clone_body);
             inner_body.clear();
             inner_body.append(&mut data);
-            // self.address = self.replay.clone();
-            // self.replay = None;
+            self.address = self.replay.clone();
+            self.replay = None;
         }
     }
 }
@@ -315,10 +322,12 @@ pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     event_bus_pool: Arc<ThreadPool>,
     consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message) + Send + Sync>>>,
     callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message) + Send + Sync + UnwindSafe>>>>,
-    sender: Mutex<Sender<Message>>,
+    pub(crate) sender: Mutex<Sender<Message>>,
     receiver_joiner : Arc<JoinHandle<()>>,
     cluster_manager: Arc<Option<CM>>,
     event_bus_port: u16,
+    self_arc: Option<Arc<EventBus<CM>>>,
+
 }
 
 impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
@@ -336,6 +345,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             receiver_joiner : Arc::new(receiver_joiner),
             cluster_manager: Arc::new(None),
             event_bus_port: 0,
+            self_arc: None
         };
         return ev;
     }
@@ -362,37 +372,19 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let local_cf = self.callback_functions.clone();
         let pool = self.event_bus_pool.clone();
         let local_sender = self.sender.lock().unwrap().clone();
+        self.self_arc = Some(unsafe { Arc::from_raw(self) });
 
-
-
-        let mut net_server = net::NetServer::<CM>::new(None);
-        net_server.listen_for_message(self.options.vertx_port, local_sender.clone(), move |req, send| {
-            let resp = vec![];
-            let msg = Message::from(req);
-            trace!("{:?}", msg);
-
-            let _ = send.send(msg);
-
-            return resp;
-        });
-
+        let net_server = self.create_net_server();
         self.event_bus_port = net_server.port;
-        let opt_cm = Arc::get_mut(&mut self.cluster_manager).unwrap();
-        match opt_cm {
-            Some(cm) => {
-                cm.set_cluster_node_info(ClusterNodeInfo {
-                    nodeId : cm.get_node_id(),
-                    serverID: ServerID {
-                        host: self.options.vertx_host.clone(),
-                        port: self.event_bus_port as i32
-                    }
-                });
-            },
-            None => {}
-        }
+        self.registry_in_cm();
         info!("start event bus on: {}:{}", self.options.vertx_host, self.event_bus_port);
 
-        let local_cm = self.cluster_manager.clone();
+        self.prepare_consumer_msg(receiver, local_consumers, local_cf, pool, local_sender);
+    }
+
+    fn prepare_consumer_msg(&mut self, receiver: Receiver<Message>, local_consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message) + Send + Sync>>>, local_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message) + Send + Sync + UnwindSafe>>>>, pool: Arc<ThreadPool>, local_sender: Sender<Message>) {
+        let mut local_cm = self.cluster_manager.clone();
+
         let joiner = std::thread::spawn(move || -> (){
             loop {
                 match receiver.recv() {
@@ -403,13 +395,15 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                         let inner_sender = local_sender.clone();
                         let mut inner_cm = local_cm.clone();
 
+
                         pool.spawn(move || {
                             let mut mut_msg = msg;
                             match &mut_msg.address {
                                 Some(address) => {
                                     trace!("msg: {:?}", address);
                                     // invoke function from consumer
-                                    let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm) };
+                                    let mut inner_cm0 = inner_cm.clone();
+                                    let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm0) };
                                     match manager {
                                         // ClusterManager
                                         Some(cm) => {
@@ -433,55 +427,54 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                             let callback = inner_consummers.get(&address.clone());
                                                             match callback {
                                                                 Some(caller) => {
-                                                                    caller.call((&mut mut_msg,));
-                                                                    mut_msg.address = None;
+                                                                    caller.call((&mut mut_msg, ));
+                                                                    // mut_msg.address = None;
                                                                     inner_sender.send(mut_msg).unwrap();
                                                                 },
                                                                 None => {}
                                                             }
                                                         } else {
-
                                                             debug!("{:?}", node);
+                                                            let mut local_tcp_conn = None;
+                                                            match unsafe { Arc::get_mut_unchecked(&mut inner_cm.clone()) } {
+                                                                Some(cm) => {
+                                                                    local_tcp_conn = cm.get_conn(&cm.get_node_id());
+                                                                },
+                                                                None => {}
+                                                            }
                                                             RUNTIME.spawn(async move {
+
                                                                 match TcpStream::connect(format!("{}:{}", host, port)).await {
-                                                                    Ok(stream) => {
-                                                                        debug!("{:?}", stream);
-                                                                        let mut stream = stream;
+                                                                    Ok(mut stream) => {
                                                                         match stream.write_all(&mut_msg.to_vec().unwrap()).await {
-                                                                            Ok(_r) => {
-                                                                                let mut response = [0u8;1];
-                                                                                let _ = stream.read(&mut response);
-                                                                            },
-                                                                            Err(e) => {
-                                                                                warn!("Error in send message: {:?}", e);
-                                                                            }
+                                                                        Ok(_r) => {
+                                                                            let mut response = [0u8; 1];
+                                                                            let _ = stream.read(&mut response);
+                                                                            let _ = stream.shutdown(Shutdown::Both);
+                                                                        },
+                                                                        Err(e) => {
+                                                                            warn!("Error in send message: {:?}", e);
                                                                         }
+                                                                    }
                                                                     },
-                                                                    Err(e) => {
-                                                                        warn!("Error in send message: {:?}", e);
+                                                                    Err(err) => {
+                                                                        warn!("Error in send message: {:?}", err);
                                                                     }
                                                                 }
                                                             });
-
-
                                                         }
-
-
                                                     }
                                                 },
                                                 None => {
-
                                                     let callback = inner_cf.lock().unwrap().remove(address);
                                                     match callback {
                                                         Some(caller) => {
-                                                            caller.call((&mut_msg,));
+                                                            caller.call((&mut_msg, ));
                                                         },
                                                         None => {}
                                                     }
-
                                                 }
                                             }
-
                                         },
                                         None => {
                                             // NoClusterManager
@@ -489,8 +482,8 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                             debug!("manager not found");
                                             match callback {
                                                 Some(caller) => {
-                                                    caller.call((&mut mut_msg,));
-                                                    mut_msg.address = None;
+                                                    caller.call((&mut mut_msg, ));
+                                                    // mut_msg.address = None;
                                                     inner_sender.send(mut_msg).unwrap();
                                                 },
                                                 None => {}
@@ -499,19 +492,18 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                     }
                                 },
                                 None => {
-                                    // invoke callback function from message
+                                    info!("{:?}", mut_msg);
                                     let address = mut_msg.replay.clone().unwrap();
                                     let callback = inner_cf.lock().unwrap().remove(&address);
                                     match callback {
                                         Some(caller) => {
-                                            caller.call((&mut_msg,));
+                                            caller.call((&mut_msg, ));
                                         },
                                         None => {}
                                     }
                                 }
                             }
                         });
-
                     },
                     Err(_err) => {
                         error!("{:?}", _err);
@@ -520,6 +512,36 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             }
         });
         self.receiver_joiner = Arc::new(joiner);
+    }
+
+    fn registry_in_cm(&mut self) {
+        let opt_cm = Arc::get_mut(&mut self.cluster_manager).unwrap();
+        match opt_cm {
+            Some(cm) => {
+                cm.set_cluster_node_info(ClusterNodeInfo {
+                    nodeId: cm.get_node_id(),
+                    serverID: ServerID {
+                        host: self.options.vertx_host.clone(),
+                        port: self.event_bus_port as i32
+                    }
+                });
+            },
+            None => {}
+        }
+    }
+
+    fn create_net_server(&mut self) -> &mut NetServer<CM> {
+        let mut net_server = net::NetServer::<CM>::new(self.self_arc.clone());
+        net_server.listen_for_message(self.options.vertx_port,  move |req, send| {
+            let resp = vec![];
+            let msg = Message::from(req);
+            trace!("{:?}", msg);
+
+            let _ = send.send(msg);
+
+            return resp;
+        });
+        net_server
     }
 
     pub fn consumer<OP> (&self, address: &str,  op: OP)

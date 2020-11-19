@@ -437,67 +437,19 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                         let port = node.serverID.port.clone();
 
                                                         if node.nodeId == cm.get_node_id() {
-                                                            let callback = inner_consummers.get(&address.clone());
-                                                            match callback {
-                                                                Some(caller) => {
-                                                                    caller.call((&mut mut_msg, ));
-                                                                    inner_sender.send(mut_msg).unwrap();
-                                                                },
-                                                                None => {}
-                                                            }
+                                                            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address)
                                                         } else {
                                                             debug!("{:?}", node);
                                                             let node_id = node.nodeId.clone();
                                                             RUNTIME.spawn(async move {
-
                                                                 let tcp_stream = TCPS.get(&node_id);
                                                                 match tcp_stream {
-                                                                    Some(stream) => {
-                                                                        let mut stream = stream.clone();
-                                                                        unsafe {
-                                                                            let tcps= Arc::get_mut_unchecked(&mut stream);
-                                                                            match tcps.write_all(&mut_msg.to_vec().unwrap()).await {
-                                                                                Ok(_r) => {
-                                                                                    let mut response = [0u8; 1];
-                                                                                    let _ = tcps.read(&mut response);
-                                                                                },
-                                                                                Err(e) => {
-                                                                                    warn!("Error in send message: {:?}", e);
-                                                                                }
-                                                                            }
-                                                                        }
-
-                                                                    },
+                                                                    Some(stream) => <EventBus<CM>>::get_stream(&mut mut_msg, stream).await,
 
                                                                     None => {
-
-                                                                        match TcpStream::connect(format!("{}:{}", host, port)).await {
-                                                                            Ok(mut stream) => {
-                                                                                match stream.write_all(&mut_msg.to_vec().unwrap()).await {
-                                                                                    Ok(_r) => {
-                                                                                        let mut response = [0u8; 1];
-                                                                                        let _ = stream.read(&mut response);
-                                                                                        let mut tcps = TCPS.clone();
-                                                                                        unsafe {
-                                                                                            let tcps= Arc::get_mut_unchecked(&mut tcps);
-                                                                                            tcps.insert(node_id, Arc::new(stream));
-                                                                                        }
-                                                                                    },
-                                                                                    Err(e) => {
-                                                                                        warn!("Error in send message: {:?}", e);
-                                                                                    }
-                                                                                }
-                                                                            },
-                                                                            Err(err) => {
-                                                                                warn!("Error in send message: {:?}", err);
-                                                                            }
-                                                                        }
-
+                                                                        <EventBus<CM>>::create_connect(&mut mut_msg, host, port, node_id).await;
                                                                     }
-
                                                                 }
-
-
                                                             });
                                                         }
                                                     }
@@ -515,27 +467,11 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                         },
                                         None => {
                                             // NoClusterManager
-                                            let callback = inner_consummers.get(&address);
-                                            match callback {
-                                                Some(caller) => {
-                                                    caller.call((&mut mut_msg, ));
-                                                    inner_sender.send(mut_msg).unwrap();
-                                                },
-                                                None => {}
-                                            }
+                                            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address);
                                         }
                                     }
                                 },
-                                None => {
-                                    let address = mut_msg.replay.clone().unwrap();
-                                    let callback = inner_cf.lock().unwrap().remove(&address);
-                                    match callback {
-                                        Some(caller) => {
-                                            caller.call((&mut_msg, ));
-                                        },
-                                        None => {}
-                                    }
-                                }
+                                None => <EventBus<CM>>::call_replay(inner_cf, &mut_msg)
                             }
                         });
                     },
@@ -546,6 +482,68 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             }
         });
         self.receiver_joiner = Arc::new(joiner);
+    }
+
+    fn call_replay(inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message) + Send + Sync + UnwindSafe>>>>, mut_msg: &Message) {
+        let address = mut_msg.replay.clone().unwrap();
+        let callback = inner_cf.lock().unwrap().remove(&address);
+        match callback {
+            Some(caller) => {
+                caller.call((mut_msg, ));
+            },
+            None => {}
+        }
+    }
+
+    fn call_local_func(inner_consummers: &Arc<HashMap<String, Box<dyn Fn(&mut Message) + Send + Sync>>>, inner_sender: &Sender<Message>, mut mut_msg: &mut Message, address: &String) {
+        let callback = inner_consummers.get(&address.clone());
+        match callback {
+            Some(caller) => {
+                caller.call((mut_msg, ));
+                inner_sender.send(mut_msg.clone()).unwrap();
+            },
+            None => {}
+        }
+    }
+
+    async fn get_stream(mut_msg: &mut Message, stream: &Arc<TcpStream>) {
+        let mut stream = stream.clone();
+        unsafe {
+            let tcps = Arc::get_mut_unchecked(&mut stream);
+            match tcps.write_all(&mut_msg.to_vec().unwrap()).await {
+                Ok(_r) => {
+                    let mut response = [0u8; 1];
+                    let _ = tcps.read(&mut response);
+                },
+                Err(e) => {
+                    warn!("Error in send message: {:?}", e);
+                }
+            }
+        }
+    }
+
+    async fn create_connect(mut_msg: &mut Message, host: String, port: i32, node_id: String) {
+        match TcpStream::connect(format!("{}:{}", host, port)).await {
+            Ok(mut stream) => {
+                match stream.write_all(&mut_msg.to_vec().unwrap()).await {
+                    Ok(_r) => {
+                        let mut response = [0u8; 1];
+                        let _ = stream.read(&mut response);
+                        let mut tcps = TCPS.clone();
+                        unsafe {
+                            let tcps = Arc::get_mut_unchecked(&mut tcps);
+                            tcps.insert(node_id, Arc::new(stream));
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Error in send message: {:?}", e);
+                    }
+                }
+            },
+            Err(err) => {
+                warn!("Error in send message: {:?}", err);
+            }
+        }
     }
 
     fn registry_in_cm(&mut self) {

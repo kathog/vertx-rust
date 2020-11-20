@@ -5,7 +5,6 @@ extern crate jvm_serializable;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-use log::{debug, info};
 
 #[cfg(test)]
 mod tests {

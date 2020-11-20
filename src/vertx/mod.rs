@@ -24,9 +24,6 @@ use std::convert::TryInto;
 use crate::net;
 use crossbeam_channel::*;
 use crate::net::NetServer;
-use std::net::Shutdown;
-use std::ops::{Deref, DerefMut};
-use std::iter::FromIterator;
 
 
 static EV_INIT: Once = Once::new();
@@ -56,15 +53,15 @@ pub struct ClusterNodeInfo {
 pub trait ClusterManager: Send {
 
     fn add_sub(&self, address: String);
-    #[inline]
+
     fn set_cluster_node_info(&mut self, node: ClusterNodeInfo);
-    #[inline]
+
     fn get_node_id(&self) -> String;
-    #[inline]
+
     fn get_nodes(&self) -> Vec<String>;
-    #[inline]
+
     fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
-    #[inline]
+
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
     // fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>>;
@@ -73,7 +70,6 @@ pub trait ClusterManager: Send {
 
     fn leave(&self);
 
-    #[inline]
     fn next(&self, len: usize) -> usize;
 
 }
@@ -117,7 +113,7 @@ impl ClusterManager for NoClusterManager {
         unimplemented!()
     }
 
-    fn next(&self, len: usize) -> usize {
+    fn next(&self, _len: usize) -> usize {
         unimplemented!()
     }
 }
@@ -286,7 +282,9 @@ impl Message {
 }
 
 pub struct Vertx<CM:'static + ClusterManager + Send + Sync> {
+    #[allow(dead_code)]
     options : VertxOptions,
+    #[allow(dead_code)]
     worker_pool: ThreadPool,
     event_bus: Arc<EventBus<CM>>,
     ph: PhantomData<CM>
@@ -396,7 +394,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                             local_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync + UnwindSafe>>>>,
                             pool: Arc<ThreadPool>,
                             local_sender: Sender<Message>) {
-        let mut local_cm = self.cluster_manager.clone();
+        let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
 
         let joiner = std::thread::spawn(move || -> (){
@@ -407,7 +405,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
-                        let mut inner_cm = local_cm.clone();
+                        let inner_cm = local_cm.clone();
                         let inner_ev = local_ev.clone();
 
 
@@ -521,7 +519,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     #[inline]
     fn call_local_func(inner_consummers: &Arc<HashMap<String, Box<dyn Fn(&mut Message,Arc<EventBus<CM>>,) + Send + Sync>>>,
                        inner_sender: &Sender<Message>,
-                       mut mut_msg: &mut Message,
+                       mut_msg: &mut Message,
                        address: &String,
                         ev: Arc<EventBus<CM>>) {
         let callback = inner_consummers.get(&address.clone());
@@ -594,7 +592,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     fn create_net_server(&mut self) -> &mut NetServer<CM> {
-        let mut net_server = net::NetServer::<CM>::new(self.self_arc.clone());
+        let net_server = net::NetServer::<CM>::new(self.self_arc.clone());
         net_server.listen_for_message(self.options.vertx_port,  move |req, send| {
             let resp = vec![];
             let msg = Message::from(req);

@@ -5,13 +5,10 @@ use multimap::MultiMap;
 use uuid::Uuid;
 use zookeeper::{ZooKeeper, Acl};
 use tokio::time::Duration;
-use log::{error, info, LevelFilter, warn, debug};
+use log::{error, warn, debug};
 use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
 use zookeeper::CreateMode;
-use std::alloc::dealloc;
-use std::collections::hash_map::RandomState;
-use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus, RUNTIME};
-use std::convert::TryInto;
+use crate::vertx::{ClusterManager, ClusterNodeInfo, RUNTIME};
 use tokio::net::TcpStream;
 use hashbrown::HashMap;
 use std::sync::RwLock;
@@ -21,9 +18,8 @@ mod tests {
     use crate::zk::ZookeeperClusterManager;
     use simple_logger::SimpleLogger;
     use tokio::time::Duration;
-    use std::sync::Arc;
     use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
-    use log::{error, info, debug};
+    use log::{debug};
     use crate::net::NetServer;
 
 
@@ -122,8 +118,9 @@ struct ZookeeperClusterManager {
 
 impl ZookeeperClusterManager {
 
+    #[allow(dead_code)]
     pub fn new (zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
-        let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |x| {}).unwrap();
+        let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |_| {}).unwrap();
 
         ZookeeperClusterManager {
             nodes : Arc::new(Mutex::new(Vec::new())),
@@ -139,8 +136,8 @@ impl ZookeeperClusterManager {
 
 }
 
-const head_of_data : [u8; 119] =  [0, 172, 237, 0, 5, 115, 114, 0, 54, 105, 111, 46, 118, 101, 114, 116, 120, 46, 115, 112, 105, 46, 99, 108, 117, 115, 116, 101, 114, 46, 122, 111, 111, 107, 101, 101, 112, 101, 114, 46, 105, 109, 112, 108, 46, 90, 75, 83, 121, 110, 99, 77, 97, 112, 36, 75, 101, 121, 86, 97, 108, 117, 101, 90, 158, 26, 0, 73, 105, 76, 122, 2, 0, 2, 76, 0, 3, 107, 101, 121, 116, 0, 18, 76, 106, 97, 118, 97, 47, 108, 97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 59, 76, 0, 5, 118, 97, 108, 117, 101, 113, 0, 126, 0, 1, 120, 112, 116, 0, 36];
-const middle_of_data : [u8; 3] = [116, 0, 85];
+const HEAD_OF_DATA: [u8; 119] =  [0, 172, 237, 0, 5, 115, 114, 0, 54, 105, 111, 46, 118, 101, 114, 116, 120, 46, 115, 112, 105, 46, 99, 108, 117, 115, 116, 101, 114, 46, 122, 111, 111, 107, 101, 101, 112, 101, 114, 46, 105, 109, 112, 108, 46, 90, 75, 83, 121, 110, 99, 77, 97, 112, 36, 75, 101, 121, 86, 97, 108, 117, 101, 90, 158, 26, 0, 73, 105, 76, 122, 2, 0, 2, 76, 0, 3, 107, 101, 121, 116, 0, 18, 76, 106, 97, 118, 97, 47, 108, 97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 59, 76, 0, 5, 118, 97, 108, 117, 101, 113, 0, 126, 0, 1, 120, 112, 116, 0, 36];
+const MIDDLE_OF_DATA: [u8; 3] = [116, 0, 85];
 
 impl ClusterManager for ZookeeperClusterManager {
 
@@ -152,7 +149,7 @@ impl ClusterManager for ZookeeperClusterManager {
                 match stat {
                     Some(_s) => {},
                     None => {
-                        self.zookeeper.create(&format!("{}/{}", ZK_PATH_SUBS, address),
+                        let _ = self.zookeeper.create(&format!("{}/{}", ZK_PATH_SUBS, address),
                                               vec![],
                                               Acl::open_unsafe().clone(),
                                               CreateMode::Persistent);
@@ -198,9 +195,9 @@ impl ClusterManager for ZookeeperClusterManager {
 
 
         let mut data: Vec<u8> = vec![];
-        data.extend(&head_of_data);
+        data.extend(&HEAD_OF_DATA);
         data.extend(self.node_id.as_bytes());
-        data.extend(&middle_of_data);
+        data.extend(&MIDDLE_OF_DATA);
         data.extend(format!("{}{}{}{}{}","{\"verticles\":[],\"group\":\"__DISABLED__\",\"server_id\":{\"host\":\"",
                             self.cluster_node.serverID.host.clone(),
                             "\",\"port\":",
@@ -239,13 +236,6 @@ impl ClusterManager for ZookeeperClusterManager {
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>> {
         self.subs.clone()
     }
-
-    // fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>> {
-    //     return match self.tcp_conns.get(node_id) {
-    //         Some(conn) => Some(conn.clone()),
-    //         None => None
-    //     }
-    // }
 
     fn join(&mut self) {
         self.watch_nodes();
@@ -333,7 +323,7 @@ impl ZookeeperClusterManager {
                         debug!("{:?}", key_value);
                     }
                 },
-                PathChildrenCacheEvent::ChildRemoved(id) => {
+                PathChildrenCacheEvent::ChildRemoved(_) => {
 
                 }
                 _ => {}
@@ -367,7 +357,7 @@ impl ZookeeperClusterManager {
                         inner_subs.lock().unwrap().add_listener(move |ev| {
                             let mut inner_tcp_conns0 = inner_tcp_conns.clone();
                             match ev {
-                                PathChildrenCacheEvent::ChildAdded(id, data) => {
+                                PathChildrenCacheEvent::ChildAdded(_, data) => {
                                     let msg_addr = recv.replace("/asyncMultiMap/__vertx.subs/", "");
                                     let data_as_byte = &data.0;
                                     let mut deser = ObjectInputStream {};
@@ -415,7 +405,7 @@ impl ZookeeperClusterManager {
 
                         clone_subs.lock().unwrap().push(inner_subs);
                     },
-                    Err(e) => {}
+                    Err(_) => {}
                 }
             }
         });

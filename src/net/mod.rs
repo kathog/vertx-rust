@@ -1,9 +1,7 @@
 use crate::vertx::{RUNTIME, Message, EventBus, ClusterManager};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener};
 use tokio::prelude::*;
 use bytes::BytesMut;
-use log::{error, info, debug};
-use std::time::Instant;
 use crossbeam_channel::Sender;
 use std::sync::Arc;
 
@@ -39,8 +37,9 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                 let (mut socket, _) = RUNTIME.block_on(listener.accept()).unwrap();
                 RUNTIME.spawn(async move {               
                     loop {
-                        let inner_sender0 = inner_sender.clone();
+                        let inner_sender = inner_sender.clone();
                         let mut size = [0; 4];
+                        #[allow(unused_assignments)]
                         let mut len = 0;
                         let _n = match socket.read(&mut size).await {
                             Ok(n) if n == 0 => return,
@@ -51,7 +50,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                                 eprintln!("failed to read from socket; err = {:?}", e);
                                 return;
                             }
-                        };                
+                        };
                         let mut buf = BytesMut::with_capacity(len as usize);
                         let _n = match socket.read_buf(&mut buf).await {
                             Ok(n) if n == 0 => return,
@@ -61,9 +60,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                                 return;
                             }
                         };
-
                         let bytes_as_vec = buf.to_vec();
-
                         let bytes_as_string = String::from_utf8_lossy(&bytes_as_vec);
                         if bytes_as_string.contains("ping") {
                             if let Err(e) = socket.write_all(b"pong").await {
@@ -71,7 +68,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                                 return;
                             }
                         } else {
-                            let data = op(bytes_as_vec, inner_sender0);
+                            let data = op(bytes_as_vec, inner_sender);
                             if let Err(e) = socket.write_all(&data).await {
                                 eprintln!("failed to write to socket; err = {:?}", e);
                                 return;
@@ -83,19 +80,16 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
         );
     }
 
-    
+
 
     pub fn listen<OP>(&'static mut self, port: u16,  op: OP)
     where OP: Fn(&Vec<u8>, Arc<EventBus<CM>>) -> Vec<u8> + 'static + Send + Sync + Copy {
         let listener = RUNTIME.block_on(TcpListener::bind(format!("0.0.0.0:{}", port))).unwrap();
         self.port = listener.local_addr().unwrap().port();
-
         std::thread::spawn(move || {
             loop {
                 let (mut socket, _) = RUNTIME.block_on(listener.accept()).unwrap();
-
                 let ev = self.event_bus.as_ref().unwrap().clone();
-
                 RUNTIME.spawn(async move {
                     loop {
                         let local_ev = ev.clone();
@@ -109,16 +103,15 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                                 return;
                             }
                         };
-
                         let data = op(&request, local_ev);
-    
                         if let Err(e) = socket.write_all(&data).await {
                             eprintln!("failed to write to socket; err = {:?}", e);
                             return;
                         }
                     }
                 });
-            }});
+            }
+        });
     }
 
 }

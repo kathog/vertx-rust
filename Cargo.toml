@@ -8,10 +8,12 @@ edition = "2018"
 default = []
 
 zk = ["zookeeper"]
+tc = ["tcmalloc"]
 
 
 [dependencies]
 zookeeper = { version = "0.5.9", optional = true }
+tcmalloc = { version = "0.3", optional = true }
 rayon = "1.5.0"
 rustc-serialize = "0.3.24"
 serde = "1.0.117"

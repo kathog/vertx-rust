@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 // use rayon::prelude::*;
 use rayon::{ThreadPoolBuilder, ThreadPool};
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use std::{
     sync::{
         Arc,
@@ -25,7 +25,8 @@ use crate::net;
 use crossbeam_channel::*;
 use crate::net::NetServer;
 use std::net::Shutdown;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
+use std::iter::FromIterator;
 
 
 static EV_INIT: Once = Once::new();
@@ -311,7 +312,7 @@ impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
 
 
     pub fn start(&self) {
-        
+        self.event_bus.start();
     }
 
     pub fn event_bus(&self) -> Arc<EventBus<CM>> {
@@ -365,7 +366,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         self.cluster_manager = Arc::new(Some(m));    
     }
 
-    fn start (&mut self) {
+    fn start (&self) {
         let joiner = &self.receiver_joiner;
         let h = joiner.clone();
         unsafe {
@@ -430,39 +431,12 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                     if n.len() == 0 {
                                                         warn!("subs not found");
                                                     } else {
-                                                        let idx = cm.next(n.len());
-                                                        let mut node = n.get(idx);
-                                                        match node {
-                                                            Some(_) => {},
-                                                            None => {
-                                                                let idx = cm.next(n.len());
-                                                                node = n.get(idx);
-                                                            }
-                                                        }
-                                                        let node = node.unwrap();
-                                                        let host = node.serverID.host.clone();
-                                                        let port = node.serverID.port.clone();
-
-                                                        if node.nodeId == cm.get_node_id() {
-                                                            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap())
-                                                        } else {
-                                                            debug!("{:?}", node);
-                                                            let node_id = node.nodeId.clone();
-                                                            RUNTIME.spawn(async move {
-                                                                let tcp_stream = TCPS.get(&node_id);
-                                                                match tcp_stream {
-                                                                    Some(stream) => <EventBus<CM>>::get_stream(&mut mut_msg, stream).await,
-
-                                                                    None => {
-                                                                        <EventBus<CM>>::create_stream(&mut mut_msg, host, port, node_id).await;
-                                                                    }
-                                                                }
-                                                            });
-                                                        }
+                                                        <EventBus<CM>>::send_message(&inner_consummers, &inner_sender, &inner_ev, &mut mut_msg, &address, cm, n)
                                                     }
                                                 },
                                                 None => {
-                                                    let callback = inner_cf.lock().unwrap().remove(&address);
+                                                    let mut map = inner_cf.lock().unwrap();
+                                                    let callback = map.remove(&address);
                                                     match callback {
                                                         Some(caller) => {
                                                             caller.call((&mut_msg, inner_ev.clone().unwrap()));
@@ -492,15 +466,56 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     #[inline]
+    fn send_message(inner_consummers: &Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>, inner_sender: &Sender<Message>, inner_ev: &Option<Arc<EventBus<CM>>>, mut mut_msg: &mut Message, address: &String, cm: &mut CM, n: &Vec<ClusterNodeInfo>) {
+        let idx = cm.next(n.len());
+        let mut node = n.get(idx);
+        match node {
+            Some(_) => {},
+            None => {
+                let idx = cm.next(n.len());
+                node = n.get(idx);
+            }
+        }
+        let node = node.unwrap();
+        let host = node.serverID.host.clone();
+        let port = node.serverID.port.clone();
+
+        if node.nodeId == cm.get_node_id() {
+            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap())
+        } else {
+            debug!("{:?}", node);
+            let node_id = node.nodeId.clone();
+            let mut message : &'static mut Message = Box::leak(Box::new(mut_msg.clone()));
+            RUNTIME.spawn(async move {
+                let tcp_stream = TCPS.get(&node_id);
+                match tcp_stream {
+                    Some(stream) => <EventBus<CM>>::get_stream(&mut message, stream).await,
+
+                    None => {
+                        <EventBus<CM>>::create_stream(&mut message, host, port, node_id).await;
+                    }
+                }
+            });
+        }
+    }
+
+    #[inline]
     fn call_replay(inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync + UnwindSafe>>>>, mut_msg: &Message, ev: Arc<EventBus<CM>>) {
-        let address = mut_msg.replay.clone().unwrap();
-        let callback = inner_cf.lock().unwrap().remove(&address);
-        match callback {
-            Some(caller) => {
-                caller.call((mut_msg, ev,));
+        let address = mut_msg.replay.clone();
+        match address {
+            Some(address) => {
+                let mut map = inner_cf.lock().unwrap();
+                let callback = map.remove(&address);
+                match callback {
+                    Some(caller) => {
+                        caller.call((mut_msg, ev.clone()));
+                    },
+                    None => {}
+                }
             },
             None => {}
         }
+
     }
 
     #[inline]
@@ -619,6 +634,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         local_sender.send(message).unwrap();
     }
 
+    #[inline]
     pub fn request_with_callback<OP> (&self, address: &str, request: String, op: OP)
         where OP : Fn(& Message,Arc<EventBus<CM>>,) + Send + 'static + Sync + UnwindSafe, {
         let addr = address.to_owned();

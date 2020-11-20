@@ -52,9 +52,10 @@ mod tests {
         net_server.listen(9091, move |req, ev| {
             let mut resp = vec![];
 
+            // ev.request("test.01", format!("regest:"));
+
             ev.request_with_callback("test.01", format!("regest:"), move |m, ev| {
-                let _body = m.body();
-                // COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                // let _body = m.body();
                 // info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
             });
 
@@ -72,7 +73,7 @@ Content-Length: 14
         });
         
         let elapsed = time.elapsed();
-        std::thread::park();
+        vertx.start();
         // println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
         // println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
 

@@ -19,8 +19,9 @@ mod tests {
     use simple_logger::SimpleLogger;
     use tokio::time::Duration;
     use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
-    use log::{debug};
+    use log::{debug, info};
     use crate::net::NetServer;
+    use crossbeam_channel::*;
 
 
     #[test]
@@ -49,12 +50,14 @@ mod tests {
             let mut resp = vec![];
 
             // ev.request("test.01", format!("regest:"));
-
+            let (tx,rx) = bounded(1);
             ev.request_with_callback("test.01", format!("regest:"), move |m, ev| {
                 // let _body = m.body();
                 // info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
+                tx.send(m.body());
             });
 
+            rx.recv().unwrap();
             let data = r#"
 HTTP/1.1 200 OK
 content-type: application/json

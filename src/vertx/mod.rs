@@ -329,7 +329,7 @@ pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     options : EventBusOptions,
     event_bus_pool: Arc<ThreadPool>,
     consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>,) + Send + Sync>>>,
-    callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync + UnwindSafe>>>>,
+    callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync>>>>,
     pub(crate) sender: Mutex<Sender<Message>>,
     receiver_joiner : Arc<JoinHandle<()>>,
     cluster_manager: Arc<Option<CM>>,
@@ -391,7 +391,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     fn prepare_consumer_msg(&mut self, receiver: Receiver<Message>, local_consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>,
-                            local_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync + UnwindSafe>>>>,
+                            local_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>>,
                             pool: Arc<ThreadPool>,
                             local_sender: Sender<Message>) {
         let local_cm = self.cluster_manager.clone();
@@ -498,7 +498,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     #[inline]
-    fn call_replay(inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync + UnwindSafe>>>>, mut_msg: &Message, ev: Arc<EventBus<CM>>) {
+    fn call_replay(inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync >>>>, mut_msg: &Message, ev: Arc<EventBus<CM>>) {
         let address = mut_msg.replay.clone();
         match address {
             Some(address) => {
@@ -634,7 +634,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
     #[inline]
     pub fn request_with_callback<OP> (&self, address: &str, request: String, op: OP)
-        where OP : Fn(& Message,Arc<EventBus<CM>>,) + Send + 'static + Sync + UnwindSafe, {
+        where OP : Fn(& Message,Arc<EventBus<CM>>,) + Send + 'static + Sync, {
         let addr = address.to_owned();
         let body0 = request.as_bytes().to_vec();
         let message = Message {

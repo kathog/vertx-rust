@@ -105,7 +105,7 @@ struct ZKSyncMapKeyValue {
     key: Object,
 }
 
-struct ZookeeperClusterManager {
+pub struct ZookeeperClusterManager {
 
     node_id: String,
     nodes: Arc<Mutex<Vec<String>>>,

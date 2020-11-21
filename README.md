@@ -17,6 +17,8 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 4. Zookeeper cluster manager
 
 
+# Work with vertx-rust
+
 ## Code examples
 
 ### Eventbus consumer

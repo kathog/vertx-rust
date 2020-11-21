@@ -20,9 +20,6 @@ fn main() {
         let response = format!("{{\"health\": \"{code}\"}}", code=std::str::from_utf8(&body.to_vec()).unwrap());
         m.reply(response.into_bytes());
     });
-    std::thread::sleep(Duration::from_secs(1));
-    let time = std::time::Instant::now();
-
     let net_server = NetServer::new(Some(event_bus.clone()));
     net_server.listen(9091, move |_req, ev| {
         let mut resp = vec![];
@@ -42,6 +39,5 @@ Content-Length: 16
         resp
     });
 
-    let _elapsed = time.elapsed();
     vertx.start();
 }

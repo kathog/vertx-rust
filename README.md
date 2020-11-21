@@ -81,3 +81,6 @@ net_server.listen(9091, move |_req, ev| {
 vertx.start();
 
 ```
+
+More examples on: [examples](https://github.com/kathog/vertx-rust/tree/main/examples)
+

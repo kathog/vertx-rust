@@ -12,6 +12,7 @@ use crate::vertx::{ClusterManager, ClusterNodeInfo, RUNTIME};
 use tokio::net::TcpStream;
 use hashbrown::HashMap;
 use std::sync::RwLock;
+use log::info;
 
 #[cfg(test)]
 mod tests {

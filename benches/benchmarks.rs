@@ -1,5 +1,4 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use std::sync::{Arc, Mutex};
 
     
 fn vertx(_c: &mut Criterion) {

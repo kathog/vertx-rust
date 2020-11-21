@@ -428,7 +428,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                                     if n.len() == 0 {
                                                         warn!("subs not found");
                                                     } else {
-                                                        <EventBus<CM>>::send_message(&inner_consummers, &inner_sender, &inner_ev, &mut mut_msg, &address, cm, n)
+                                                        <EventBus<CM>>::send_message(&inner_consummers, &inner_sender, &inner_ev, &mut mut_msg, &address, cm, n, inner_cf)
                                                     }
                                                 },
                                                 None => {
@@ -445,7 +445,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                                         },
                                         None => {
                                             // NoClusterManager
-                                            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap());
+                                            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap(), inner_cf);
                                         }
                                     }
                                 },
@@ -463,7 +463,13 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     #[inline]
-    fn send_message(inner_consummers: &Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>, inner_sender: &Sender<Message>, inner_ev: &Option<Arc<EventBus<CM>>>, mut mut_msg: &mut Message, address: &String, cm: &mut CM, n: &Vec<ClusterNodeInfo>) {
+    fn send_message(inner_consummers: &Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+                    inner_sender: &Sender<Message>,
+                    inner_ev: &Option<Arc<EventBus<CM>>>,
+                    mut mut_msg: &mut Message,
+                    address: &String,
+                    cm: &mut CM, n: &Vec<ClusterNodeInfo>,
+                    inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync >>>>) {
         let idx = cm.next(n.len());
         let mut node = n.get(idx);
         match node {
@@ -478,7 +484,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let port = node.serverID.port.clone();
 
         if node.nodeId == cm.get_node_id() {
-            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap())
+            <EventBus<CM>>::call_local_func(&inner_consummers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap(), inner_cf)
         } else {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
@@ -520,14 +526,25 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                        inner_sender: &Sender<Message>,
                        mut_msg: &mut Message,
                        address: &String,
-                        ev: Arc<EventBus<CM>>) {
+                       ev: Arc<EventBus<CM>>,
+                       inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync >>>>) {
         let callback = inner_consummers.get(&address.clone());
         match callback {
             Some(caller) => {
                 caller.call((mut_msg, ev,));
                 inner_sender.send(mut_msg.clone()).unwrap();
             },
-            None => {}
+            None => {
+                let mut map = inner_cf.lock().unwrap();
+                let callback = map.remove(address);
+                match callback {
+                    Some(caller) => {
+                        let msg = mut_msg.clone();
+                        caller.call((&msg, ev.clone()));
+                    },
+                    None => {}
+                }
+            }
         }
     }
 

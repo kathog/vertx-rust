@@ -8,7 +8,6 @@ use std::{
         Mutex,
     },
     thread::JoinHandle,
-    panic::*,
 };
 use log::{info, debug, trace, warn, error};
 use multimap::MultiMap;

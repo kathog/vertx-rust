@@ -18,7 +18,7 @@ mod tests {
     use crate::zk::ZookeeperClusterManager;
     use simple_logger::SimpleLogger;
     use tokio::time::Duration;
-    use crate::vertx::{ClusterManager, Vertx, ClusterNodeInfo, VertxOptions, EventBus};
+    use crate::vertx::{ClusterManager, VertxOptions, Vertx};
     use log::{debug, info};
     use crate::net::NetServer;
     use crossbeam_channel::*;
@@ -28,14 +28,14 @@ mod tests {
     fn zk_vertx() {
         SimpleLogger::new().init().unwrap();
 
-        let mut vertx_options = VertxOptions::default();
+        let vertx_options = VertxOptions::default();
         debug!("{:?}", vertx_options);
         let mut vertx : Vertx<ZookeeperClusterManager> = Vertx::new(vertx_options);
         let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
         vertx.set_cluster_manager(zk);
         let event_bus = vertx.event_bus();
         
-        event_bus.consumer("test.01", move |m, ev| {
+        event_bus.consumer("test.01", move |m, _| {
             let body = m.body();
 
             // info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
@@ -45,19 +45,18 @@ mod tests {
         std::thread::sleep(Duration::from_secs(1));
         let time = std::time::Instant::now();
 
-        let mut net_server = NetServer::new(Some(event_bus.clone()));
-        net_server.listen(9091, move |req, ev| {
+        let net_server = NetServer::new(Some(event_bus.clone()));
+        net_server.listen(9091, move |_req, ev| {
             let mut resp = vec![];
 
             // ev.request("test.01", format!("regest:"));
             let (tx,rx) = bounded(1);
-            ev.request_with_callback("test.01", format!("regest:"), move |m, ev| {
+            ev.request_with_callback("test.01", format!("regest:"), move |m, _| {
                 // let _body = m.body();
                 // info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
-                tx.send(m.body());
+                let _ = tx.send(m.body());
             });
-
-            rx.recv().unwrap();
+            let _ = rx.recv();
             let data = r#"
 HTTP/1.1 200 OK
 content-type: application/json
@@ -71,7 +70,7 @@ Content-Length: 14
             resp
         });
         
-        let elapsed = time.elapsed();
+        let _elapsed = time.elapsed();
         vertx.start();
         // println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
         // println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));

@@ -37,11 +37,11 @@ jvm-serializable = {git = "https://github.com/kathog/jvm-serializable", branch =
 jvm-macro = {git = "https://github.com/kathog/jvm-serializable", branch = "main"}
 log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 crossbeam-channel = "0.5.0"
-wait-for-me = "0.2.0"
 
 [dev-dependencies]
 criterion = "0.3"
 simple_logger = "1.11.0"
+fp_rust = "0.1.39"
 
 [[bench]]
 name = "benchmarks"

@@ -15,3 +15,74 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 2. Nonblocking eventbus request
 3. Nonblocking multi-threaded tcp server
 4. Zookeeper cluster manager
+
+
+# Work with vertx-rust
+
+## Code examples
+
+### Eventbus consumer
+```rust
+use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
+
+let vertx_options = VertxOptions::default();
+let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
+let event_bus = vertx.event_bus();
+
+event_bus.consumer("test.01", move |m, _| {
+  m.reply(..);
+});
+
+vertx.start();
+```
+
+### Eventbus request
+request
+
+```rust
+use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
+
+let vertx_options = VertxOptions::default();
+let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
+let event_bus = vertx.event_bus();
+
+event_bus.request("test.01", "Hello World".to_string());
+```
+
+request with handle response
+
+```rust
+use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
+
+let vertx_options = VertxOptions::default();
+let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
+let event_bus = vertx.event_bus();
+
+event_bus.request_with_callback("test.01", "Hello World".to_string(), move |m, _| {
+  ...
+});
+```
+
+### Tcp server
+
+```rust
+use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
+use vertx_rust::net::NetServer;
+
+let vertx_options = VertxOptions::default();
+let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
+let event_bus = vertx.event_bus();
+
+let net_server = NetServer::new(Some(event_bus.clone()));
+net_server.listen(9091, move |_req, ev| {
+  let mut resp = vec![];
+  ...
+  resp
+});
+
+vertx.start();
+
+```
+
+More examples on: [examples](https://github.com/kathog/vertx-rust/tree/main/examples)
+

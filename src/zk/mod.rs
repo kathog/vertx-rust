@@ -243,6 +243,7 @@ impl ClusterManager for ZookeeperClusterManager {
         self.watch_nodes();
         self.watch_ha_info();
         self.watch_subs();
+        info!("join node: {:?} to zookeeper cluster", self.node_id);
     }
 
     fn leave(&self) {

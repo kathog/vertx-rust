@@ -4,6 +4,7 @@ use tokio::prelude::*;
 use bytes::BytesMut;
 use crossbeam_channel::Sender;
 use std::sync::Arc;
+use log::{info, error};
 
 pub struct NetServer<CM:'static + ClusterManager + Send + Sync> {
 
@@ -47,7 +48,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                                 len = i32::from_be_bytes(size);
                             },
                             Err(e) => {
-                                eprintln!("failed to read from socket; err = {:?}", e);
+                                error!("failed to read from socket; err = {:?}", e);
                                 return;
                             }
                         };
@@ -56,7 +57,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                             Ok(n) if n == 0 => return,
                             Ok(n) => &buf[0..n],
                             Err(e) => {
-                                eprintln!("failed to read from socket; err = {:?}", e);
+                                error!("failed to read from socket; err = {:?}", e);
                                 return;
                             }
                         };
@@ -64,13 +65,13 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                         let bytes_as_string = String::from_utf8_lossy(&bytes_as_vec);
                         if bytes_as_string.contains("ping") {
                             if let Err(e) = socket.write_all(b"pong").await {
-                                eprintln!("failed to write to socket; err = {:?}", e);
+                                error!("failed to write to socket; err = {:?}", e);
                                 return;
                             }
                         } else {
                             let data = op(bytes_as_vec, inner_sender);
                             if let Err(e) = socket.write_all(&data).await {
-                                eprintln!("failed to write to socket; err = {:?}", e);
+                                error!("failed to write to socket; err = {:?}", e);
                                 return;
                             }
                         }
@@ -86,6 +87,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
     where OP: Fn(&Vec<u8>, Arc<EventBus<CM>>) -> Vec<u8> + 'static + Send + Sync + Copy {
         let listener = RUNTIME.block_on(TcpListener::bind(format!("0.0.0.0:{}", port))).unwrap();
         self.port = listener.local_addr().unwrap().port();
+        info!("start net_server listen on port: {}", self.port);
         std::thread::spawn(move || {
             loop {
                 let (mut socket, _) = RUNTIME.block_on(listener.accept()).unwrap();

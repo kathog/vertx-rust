@@ -76,6 +76,23 @@ impl ZookeeperClusterManager {
 
 }
 
+impl From<ZooKeeper> for ZookeeperClusterManager {
+
+    fn from(zookeeper: ZooKeeper) -> Self {
+        ZookeeperClusterManager {
+            nodes : Arc::new(Mutex::new(Vec::new())),
+            node_id: Uuid::new_v4().to_string(),
+            ha_infos: Arc::new(Mutex::new(Vec::new())),
+            subs: Arc::new(Mutex::new(MultiMap::new())),
+            zookeeper: Arc::new(zookeeper),
+            cluster_node: Default::default(),
+            tcp_conns: Arc::new(HashMap::new()),
+            cur_idx: Arc::new(RwLock::new(0)),
+        }
+    }
+}
+
+
 const HEAD_OF_DATA: [u8; 119] =  [0, 172, 237, 0, 5, 115, 114, 0, 54, 105, 111, 46, 118, 101, 114, 116, 120, 46, 115, 112, 105, 46, 99, 108, 117, 115, 116, 101, 114, 46, 122, 111, 111, 107, 101, 101, 112, 101, 114, 46, 105, 109, 112, 108, 46, 90, 75, 83, 121, 110, 99, 77, 97, 112, 36, 75, 101, 121, 86, 97, 108, 117, 101, 90, 158, 26, 0, 73, 105, 76, 122, 2, 0, 2, 76, 0, 3, 107, 101, 121, 116, 0, 18, 76, 106, 97, 118, 97, 47, 108, 97, 110, 103, 47, 79, 98, 106, 101, 99, 116, 59, 76, 0, 5, 118, 97, 108, 117, 101, 113, 0, 126, 0, 1, 120, 112, 116, 0, 36];
 const MIDDLE_OF_DATA: [u8; 3] = [116, 0, 85];
 

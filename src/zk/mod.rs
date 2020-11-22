@@ -14,70 +14,6 @@ use hashbrown::HashMap;
 use std::sync::RwLock;
 use log::info;
 
-#[cfg(test)]
-mod tests {
-    use crate::zk::ZookeeperClusterManager;
-    use simple_logger::SimpleLogger;
-    use tokio::time::Duration;
-    use crate::vertx::{ClusterManager, VertxOptions, Vertx};
-    use log::{debug};
-    use crate::net::NetServer;
-    use crossbeam_channel::*;
-
-    #[test]
-    fn zk_vertx() {
-        SimpleLogger::new().init().unwrap();
-
-        let vertx_options = VertxOptions::default();
-        debug!("{:?}", vertx_options);
-        let mut vertx : Vertx<ZookeeperClusterManager> = Vertx::new(vertx_options);
-        let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
-        vertx.set_cluster_manager(zk);
-        let event_bus = vertx.event_bus();
-        
-        event_bus.consumer("test.01", move |m, _| {
-            let body = m.body();
-            m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
-        });
-        std::thread::sleep(Duration::from_secs(1));
-
-        let net_server = NetServer::new(Some(event_bus.clone()));
-        net_server.listen(9091, move |_req, ev| {
-            let mut resp = vec![];
-
-            let (tx,rx) = bounded(1);
-            ev.request_with_callback("test.01", format!("regest:"), move |m, _| {
-                let _ = tx.send(m.body());
-            });
-            let _ = rx.recv();
-            let data = r#"
-HTTP/1.1 200 OK
-content-type: application/json
-Date: Sun, 03 May 2020 07:05:15 GMT
-Content-Length: 14
-
-{"code": "UP"}
-"#.to_string();
-
-            resp.extend_from_slice(data.as_bytes());
-            resp
-        });
-
-        vertx.start();
-    }
-
-    #[test]
-    fn zk_init () {
-        SimpleLogger::new().init().unwrap();
-        let mut zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
-
-        zk.join();
-        std::thread::park();
-    }
-
-}
-
-
 static ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH : &str = "/cluster/nodes";
 static ZK_PATH_HA_INFO : &str = "/syncMap/__vertx.haInfo";
 static ZK_PATH_SUBS : &str = "/asyncMultiMap/__vertx.subs";
@@ -111,8 +47,21 @@ impl ZookeeperClusterManager {
 
     #[allow(dead_code)]
     pub fn new (zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
-        let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |_| {}).unwrap();
+        let zookeeper = ZooKeeper::connect(&format!("{}", zk_hosts), Duration::from_secs(1), |_| {}).unwrap();
+        let exist_root = zookeeper.exists(&zk_root, false);
+        match exist_root {
+            Ok(_) => return {
+                ZookeeperClusterManager::construct(zk_hosts, zk_root)
+            },
+            Err(_) => {
+                let _ = zookeeper.create(&zk_root, vec![], Acl::open_unsafe().clone(), CreateMode::Persistent);
+                return ZookeeperClusterManager::construct(zk_hosts, zk_root);
+            }
+        }
+    }
 
+    fn construct (zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
+        let zookeeper = ZooKeeper::connect(&format!("{}/{}", zk_hosts, zk_root), Duration::from_secs(1), |_| {}).unwrap();
         ZookeeperClusterManager {
             nodes : Arc::new(Mutex::new(Vec::new())),
             node_id: Uuid::new_v4().to_string(),

@@ -16,6 +16,17 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 3. Nonblocking multi-threaded tcp server - based on [tokio](https://github.com/tokio-rs/tokio)
 4. Zookeeper cluster manager
 
+# Benchmarks
+
+Benchmarks on Dell G3 with Intel Core i7-8750H
+
+## Microbenchmark
+```
+vertx_request_callback  time:   [1.8329 us 1.8775 us 1.9302 us]                                    
+Found 24 outliers among 100 measurements (24.00%)
+  24 (24.00%) low severe
+
+```
 
 # Work with vertx-rust
 

@@ -1,15 +1,19 @@
 #![feature(get_mut_unchecked)]
 #![feature(fn_traits)]
 #![feature(plugin)]
-
 #[cfg(feature = "tc")]
 extern crate tcmalloc;
 #[cfg(feature = "tc")]
 use tcmalloc::TCMalloc;
 #[cfg(feature = "tc")]
 #[global_allocator]
-static GLOBAL: TCMalloc = TCMalloc;
+pub static ALLOCATOR: TCMalloc = TCMalloc;
 
+#[cfg(not(feature = "tc"))]
+use std::alloc::System;
+#[cfg(not(feature = "tc"))]
+#[global_allocator]
+pub static ALLOCATOR: System = System;
 
 #[allow(non_upper_case_globals)]
 extern crate hypospray;

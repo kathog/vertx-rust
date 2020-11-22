@@ -13,7 +13,7 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 
 1. Nonblocking eventbus consumer
 2. Nonblocking eventbus request
-3. Nonblocking multi-threaded tcp server
+3. Nonblocking multi-threaded tcp server - based on [tokio](https://github.com/tokio-rs/tokio)
 4. Zookeeper cluster manager
 
 

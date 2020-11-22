@@ -101,13 +101,13 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
                             Ok(n) if n == 0 => return,
                             Ok(n) => request.extend(&buf[0..n]),
                             Err(e) => {
-                                eprintln!("failed to read from socket; err = {:?}", e);
+                                error!("failed to read from socket; err = {:?}", e);
                                 return;
                             }
                         };
                         let data = op(&request, local_ev);
                         if let Err(e) = socket.write_all(&data).await {
-                            eprintln!("failed to write to socket; err = {:?}", e);
+                            error!("failed to write to socket; err = {:?}", e);
                             return;
                         }
                     }

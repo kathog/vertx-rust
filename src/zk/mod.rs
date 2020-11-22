@@ -20,10 +20,9 @@ mod tests {
     use simple_logger::SimpleLogger;
     use tokio::time::Duration;
     use crate::vertx::{ClusterManager, VertxOptions, Vertx};
-    use log::{debug, info};
+    use log::{debug};
     use crate::net::NetServer;
     use crossbeam_channel::*;
-
 
     #[test]
     fn zk_vertx() {
@@ -38,23 +37,16 @@ mod tests {
         
         event_bus.consumer("test.01", move |m, _| {
             let body = m.body();
-
-            // info!("consumer {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
-
             m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
         });
         std::thread::sleep(Duration::from_secs(1));
-        let time = std::time::Instant::now();
 
         let net_server = NetServer::new(Some(event_bus.clone()));
         net_server.listen(9091, move |_req, ev| {
             let mut resp = vec![];
 
-            // ev.request("test.01", format!("regest:"));
             let (tx,rx) = bounded(1);
             ev.request_with_callback("test.01", format!("regest:"), move |m, _| {
-                // let _body = m.body();
-                // info!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&_body), std::thread::current().id());
                 let _ = tx.send(m.body());
             });
             let _ = rx.recv();
@@ -70,12 +62,8 @@ Content-Length: 14
             resp.extend_from_slice(data.as_bytes());
             resp
         });
-        
-        let _elapsed = time.elapsed();
-        vertx.start();
-        // println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
-        // println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
 
+        vertx.start();
     }
 
     #[test]

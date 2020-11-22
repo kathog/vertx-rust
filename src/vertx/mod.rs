@@ -488,7 +488,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         } else {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
-            let mut message : &'static mut Message = Box::leak(Box::new(mut_msg.clone()));
+            let mut message : &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
             RUNTIME.spawn(async move {
                 let tcp_stream = TCPS.get(&node_id);
                 match tcp_stream {

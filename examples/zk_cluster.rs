@@ -1,8 +1,6 @@
 use vertx_rust::vertx::{VertxOptions, Vertx};
 use vertx_rust::zk::ZookeeperClusterManager;
-use std::time::Duration;
 use vertx_rust::net::NetServer;
-use log::{debug};
 use simple_logger::SimpleLogger;
 use crossbeam_channel::bounded;
 

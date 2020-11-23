@@ -22,7 +22,7 @@ fn main() {
     net_server.listen(9091, move |_req, ev| {
         let mut resp = vec![];
         let (tx,rx) = bounded(1);
-        ev.request("test.01", "UP".to_string(), move |m, _| {
+        ev.request("test.01", b"UP".to_vec(), move |m, _| {
             let _ = tx.send(m.body());
         });
         let body = rx.recv().unwrap();

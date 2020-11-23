@@ -185,7 +185,6 @@ pub struct Message {
     port: i32,
     host: String,
     headers: i32,
-    local: bool,
     publish: bool
 }
 
@@ -478,20 +477,30 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                     inner_ev: &Option<Arc<EventBus<CM>>>,
                     mut mut_msg: &mut Message,
                     address: &String,
-                    cm: &mut CM, n: &Vec<ClusterNodeInfo>,
+                    cm: &mut CM,
+                    nodes: &Vec<ClusterNodeInfo>,
                     inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync >>>>) {
-        let idx = cm.next(n.len());
-        let mut node = n.get(idx);
-        match node {
-            Some(_) => {},
-            None => {
-                let idx = cm.next(n.len());
-                node = n.get(idx);
+
+        if mut_msg.publish {
+            for node in nodes {
+                let mut node = Some(node);
+                <EventBus<CM>>::send_to_node(&inner_consummers, &inner_sender, inner_ev, &mut mut_msg, &address, cm, inner_cf.clone(), &mut node)
             }
+        } else {
+            let idx = cm.next(nodes.len());
+            let mut node = nodes.get(idx);
+            match node {
+                Some(_) => {},
+                None => {
+                    let idx = cm.next(nodes.len());
+                    node = nodes.get(idx);
+                }
+            }
+            <EventBus<CM>>::send_to_node(&inner_consummers, &inner_sender, inner_ev, &mut mut_msg, &address, cm, inner_cf, &mut node)
         }
-        <EventBus<CM>>::send_to_node(&inner_consummers, &inner_sender, inner_ev, &mut mut_msg, &address, cm, inner_cf, &mut node)
     }
 
+    #[inline]
     fn send_to_node(inner_consummers: &&Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>, inner_sender: &&Sender<Message>, inner_ev: &Option<Arc<EventBus<CM>>>, mut mut_msg: &mut &mut Message, address: &&String, cm: &mut CM, inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>>, node: &mut Option<&ClusterNodeInfo>) {
         let node = node.unwrap();
         let host = node.serverID.host.clone();
@@ -657,13 +666,13 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         }
     }
 
-    pub fn send(&self, address: &str, request: String) {
+    #[inline]
+    pub fn send(&self, address: &str, request: Vec<u8>) {
         let addr = address.to_owned();
-        let body = request.as_bytes().to_vec();
         let message = Message {
             address: Some(addr.clone()),
             replay: None,
-            body: Arc::new(body),
+            body: Arc::new(request),
             ..Default::default()
         };
         let local_sender = self.sender.lock().unwrap().clone();
@@ -671,14 +680,27 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     #[inline]
-    pub fn request<OP> (&self, address: &str, request: String, op: OP)
+    pub fn publish(&self, address: &str, request: Vec<u8>) {
+        let addr = address.to_owned();
+        let message = Message {
+            address: Some(addr.clone()),
+            replay: None,
+            body: Arc::new(request),
+            publish: true,
+            ..Default::default()
+        };
+        let local_sender = self.sender.lock().unwrap().clone();
+        local_sender.send(message).unwrap();
+    }
+
+    #[inline]
+    pub fn request<OP> (&self, address: &str, request: Vec<u8>, op: OP)
         where OP : Fn(& Message,Arc<EventBus<CM>>,) + Send + 'static + Sync, {
         let addr = address.to_owned();
-        let body0 = request.as_bytes().to_vec();
         let message = Message {
             address: Some(addr.clone()),
             replay: Some(format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string())),
-            body: Arc::new(body0),
+            body: Arc::new(request),
             host: self.options.vertx_host.clone(),
             port: self.event_bus_port as i32,
             ..Default::default()

@@ -109,7 +109,7 @@ Content-Length: 14
         for i in 0..100000 {
             // event_bus.request("consume1", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            EVENT_BUS.request("consume1", format!("regest: {}", i), move |m, _| {
+            EVENT_BUS.request("consume1", format!("regest: {}", i).into_bytes(), move |m, _| {
                 let _body = m.body();
                 COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 // println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());

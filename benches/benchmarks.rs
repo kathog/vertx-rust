@@ -1,4 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
+use crossbeam_channel::unbounded;
 
 
 fn vertx(_c: &mut Criterion) {
@@ -16,13 +17,20 @@ fn vertx(_c: &mut Criterion) {
     });
 
     _c.bench_function("vertx_request", |b| b.iter(|| {
-        event_bus.request("test.01", "UP".to_owned(), move |m, _| {
+        let (tx,rx) = unbounded();
+        event_bus.request("test.01", b"UP".to_vec(), move |m, _| {
             let _body = m.body();
+            let _ = tx.send(1);
         });
+        let _ = rx.recv();
     }));
 
     _c.bench_function("vertx_send", |b| b.iter(|| {
-        event_bus.send("test.01", "UP".to_owned());
+        event_bus.send("test.01", b"UP".to_vec());
+    }));
+
+    _c.bench_function("vertx_publish", |b| b.iter(|| {
+        event_bus.send("test.01", b"UP".to_vec());
     }));
 }
 

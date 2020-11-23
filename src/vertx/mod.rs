@@ -330,6 +330,7 @@ pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     options : EventBusOptions,
     event_bus_pool: Arc<ThreadPool>,
     consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>,) + Send + Sync>>>,
+    local_consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>,) + Send + Sync>>>,
     callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync>>>>,
     pub(crate) sender: Mutex<Sender<Message>>,
     receiver_joiner : Arc<JoinHandle<()>>,
@@ -349,6 +350,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             options,
             event_bus_pool : Arc::new(event_bus_pool),
             consumers: Arc::new(HashMap::new()),
+            local_consumers: Arc::new(HashMap::new()),
             callback_functions: Arc::new(Mutex::new(HashMap::new())),
             sender : Mutex::new(sender),
             receiver_joiner : Arc::new(receiver_joiner),
@@ -397,6 +399,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                             local_sender: Sender<Message>) {
         let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
+        let local_local_consumers = self.local_consumers.clone();
 
         let joiner = std::thread::spawn(move || -> (){
             loop {
@@ -408,12 +411,17 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                         let inner_sender = local_sender.clone();
                         let inner_cm = local_cm.clone();
                         let inner_ev = local_ev.clone();
+                        let inner_local_consumers = local_local_consumers.clone();
 
 
                         pool.spawn(move || {
                             let mut mut_msg = msg;
                             match mut_msg.address.clone() {
                                 Some(address) => {
+                                    if inner_local_consumers.contains_key(&address) {
+                                        <EventBus<CM>>::call_local_func(&inner_local_consumers, &inner_sender, &mut mut_msg, &address, inner_ev.clone().unwrap(), inner_cf);
+                                        return;
+                                    }
                                     // invoke function from consumer
                                     let mut inner_cm0 = inner_cm.clone();
                                     let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm0) };
@@ -639,6 +647,14 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             },
             None => {}
         };
+    }
+
+    pub fn local_consumer<OP> (&self, address: &str,  op: OP)
+        where OP : Fn(&mut Message,Arc<EventBus<CM>>,) + Send + 'static + Sync, {
+        unsafe {
+            let mut local_cons = self.local_consumers.clone();
+            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::new(op));
+        }
     }
 
     pub fn send(&self, address: &str, request: String) {

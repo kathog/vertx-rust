@@ -373,7 +373,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     fn init(&mut self) {
-        let (sender, receiver) : (Sender<Message>, Receiver<Message>) = unbounded();
+        let (sender, receiver) : (Sender<Message>, Receiver<Message>) = bounded(2000);
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();

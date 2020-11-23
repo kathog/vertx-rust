@@ -21,6 +21,9 @@ fn vertx(_c: &mut Criterion) {
         });
     }));
 
+    _c.bench_function("vertx_request", |b| b.iter(|| {
+        event_bus.request("test.01", "UP".to_owned());
+    }));
 }
 
 

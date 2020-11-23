@@ -68,7 +68,7 @@ let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
 let event_bus = vertx.event_bus();
 
-event_bus.request("test.01", "Hello World".to_string());
+event_bus.request("test.01", "Hello World".into_bytes());
 ```
 
 request with handle response
@@ -80,7 +80,7 @@ let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
 let event_bus = vertx.event_bus();
 
-event_bus.request_with_callback("test.01", "Hello World".to_string(), move |m, _| {
+event_bus.request_with_callback("test.01", "Hello World".into_bytes(), move |m, _| {
   ...
 });
 ```

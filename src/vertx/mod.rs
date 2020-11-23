@@ -185,6 +185,8 @@ pub struct Message {
     port: i32,
     host: String,
     headers: i32,
+    local: bool,
+    publish: bool
 }
 
 impl Message {
@@ -479,6 +481,10 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                 node = n.get(idx);
             }
         }
+        <EventBus<CM>>::send_to_node(&inner_consummers, &inner_sender, inner_ev, &mut mut_msg, &address, cm, inner_cf, &mut node)
+    }
+
+    fn send_to_node(inner_consummers: &&Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>, inner_sender: &&Sender<Message>, inner_ev: &Option<Arc<EventBus<CM>>>, mut mut_msg: &mut &mut Message, address: &&String, cm: &mut CM, inner_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>>, node: &mut Option<&ClusterNodeInfo>) {
         let node = node.unwrap();
         let host = node.serverID.host.clone();
         let port = node.serverID.port.clone();
@@ -488,7 +494,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         } else {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
-            let mut message : &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
+            let mut message: &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
             RUNTIME.spawn(async move {
                 let tcp_stream = TCPS.get(&node_id);
                 match tcp_stream {
@@ -635,7 +641,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         };
     }
 
-    pub fn request(&self, address: &str, request: String) {
+    pub fn send(&self, address: &str, request: String) {
         let addr = address.to_owned();
         let body = request.as_bytes().to_vec();
         let message = Message {
@@ -649,7 +655,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     #[inline]
-    pub fn request_with_callback<OP> (&self, address: &str, request: String, op: OP)
+    pub fn request<OP> (&self, address: &str, request: String, op: OP)
         where OP : Fn(& Message,Arc<EventBus<CM>>,) + Send + 'static + Sync, {
         let addr = address.to_owned();
         let body0 = request.as_bytes().to_vec();

@@ -16,13 +16,13 @@ fn vertx(_c: &mut Criterion) {
     });
 
     _c.bench_function("vertx_request_callback", |b| b.iter(|| {
-        event_bus.request_with_callback("test.01", "UP".to_owned(), move |m, _| {
+        event_bus.request("test.01", "UP".to_owned(), move |m, _| {
             let _body = m.body();
         });
     }));
 
     _c.bench_function("vertx_request", |b| b.iter(|| {
-        event_bus.request("test.01", "UP".to_owned());
+        event_bus.send("test.01", "UP".to_owned());
     }));
 }
 

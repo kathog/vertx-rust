@@ -13,8 +13,9 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 
 1. Nonblocking eventbus consumer
 2. Nonblocking eventbus request
-3. Nonblocking multi-threaded tcp server - based on [tokio](https://github.com/tokio-rs/tokio)
-4. Zookeeper cluster manager
+3. Nonblocking eventbus send
+4. Nonblocking multi-threaded tcp server - based on [tokio](https://github.com/tokio-rs/tokio)
+5. Zookeeper cluster manager
 
 # Benchmarks
 
@@ -22,13 +23,13 @@ Benchmarks on Dell G3 with Intel Core i7-8750H
 
 ## Microbenchmark
 ```
-vertx_request_callback  time:   [1.8329 us 1.8775 us 1.9302 us]                                    
+vertx_request  time:   [1.8329 us 1.8775 us 1.9302 us]                                    
 Found 24 outliers among 100 measurements (24.00%)
   24 (24.00%) low severe
 ```
 
 ```
-vertx_request           time:   [684.55 ns 695.29 ns 706.51 ns]                           
+vertx_send           time:   [684.55 ns 695.29 ns 706.51 ns]                           
 Found 5 outliers among 100 measurements (5.00%)
   5 (5.00%) high mild
 ```

@@ -1,6 +1,7 @@
 #![feature(get_mut_unchecked)]
 #![feature(fn_traits)]
 #![feature(plugin)]
+#![feature(type_name_of_val)]
 #[cfg(feature = "tc")]
 extern crate tcmalloc;
 #[cfg(feature = "tc")]
@@ -26,6 +27,7 @@ extern crate lazy_static;
 
 pub mod vertx;
 pub mod net;
+pub mod http;
 
 #[cfg(feature = "zk")]
 pub mod zk;

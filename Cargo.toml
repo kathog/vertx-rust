@@ -29,7 +29,7 @@ lazy_static = "1.4.0"
 waiter_di = "1.6.2"
 hypospray = "0.1.2"
 tokio-net = "0.2.0-alpha.6"
-tokio = {version ="0.3.2", features = ["full"] }
+tokio = {version ="0.3", features = ["full"] }
 hex = "0.4.2"
 bytes = "0.6"
 multimap = "0.8.2"
@@ -37,6 +37,7 @@ jvm-serializable = {git = "https://github.com/kathog/jvm-serializable", branch =
 jvm-macro = {git = "https://github.com/kathog/jvm-serializable", branch = "main"}
 log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 crossbeam-channel = "0.5.0"
+hyper = {git = "https://github.com/hyperium/hyper", features = ["full"] }
 
 [dev-dependencies]
 criterion = "0.3"

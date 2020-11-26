@@ -2,15 +2,20 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 use vertx_rust::net::NetServer;
 use simple_logger::SimpleLogger;
 use crossbeam_channel::bounded;
+use vertx_rust::http::HttpServer;
+use hyper::{StatusCode, Version};
+use hyper::Response;
+use log::LevelFilter;
 
 fn main() {
-    SimpleLogger::new().init().unwrap();
+    SimpleLogger::new().with_module_level("hyper", LevelFilter::Info)
+        .with_module_level("tracing", LevelFilter::Info).init().unwrap();
 
     let vertx_options = VertxOptions::default();
     let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
     let event_bus = vertx.event_bus();
 
-    event_bus.local_consumer("test.01", move |m, _| {
+    event_bus.consumer("test.01", move |m, _| {
         let body = m.body();
         let response = format!("{{\"health\": \"{code}\"}}", code=std::str::from_utf8(&body.to_vec()).unwrap());
         m.reply(response.into_bytes());
@@ -33,5 +38,25 @@ Content-Length: 16
         resp.extend_from_slice(data.as_bytes());
         resp
     });
+
+    let mut http_server = HttpServer::new(Some(event_bus.clone()));
+    http_server.get("/", move |req, ev| {
+        let (tx,rx) = bounded(1);
+        ev.request("test.01", b"UP".to_vec(), move |m, _| {
+            let _ = tx.send(m.body());
+        });
+        let body = rx.recv().unwrap();
+        // let body = b"{\"health\": \"UP\"}";
+
+        Ok(Response::builder()
+            .status(StatusCode::OK)
+            // .version(Version::HTTP_2)
+            .header("content-type", "application/json")
+            .body(body.to_vec().into())
+            .unwrap())
+    });
+    http_server.listen(9092);
+
+
     vertx.start();
 }

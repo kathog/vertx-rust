@@ -1,5 +1,5 @@
 use crate::vertx::{RUNTIME, ClusterManager, EventBus};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Mutex};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use hyper::{Body, Request, Response, Method, StatusCode};
@@ -19,7 +19,7 @@ pub struct HttpServer<CM:'static + ClusterManager + Send + Sync> {
 
     pub port: u16,
     event_bus: Option<Arc<EventBus<CM>>>,
-    callers: Arc<RwLock<HashMap<(String, Method), RwLock<Box<dyn FnMut(Request<Body>, Arc<EventBus<CM>>, ) -> Result<Response<Body>, Error> + 'static + Send + Sync>>>>>,
+    callers: Arc<HashMap<(String, Method), Arc<dyn FnMut(Request<Body>, Arc<EventBus<CM>>, ) -> Result<Response<Body>, Error> + 'static + Send + Sync>>>,
     rt: Runtime,
 }
 
@@ -29,15 +29,15 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
         HttpServer {
             port: 0,
             event_bus,
-            callers: Arc::new(RwLock::new(HashMap::new())),
+            callers: Arc::new(HashMap::new()),
             rt: Runtime::new().unwrap(),
         }
     }
 
     pub fn get<OP>(&mut self, path: &str, mut op: OP)
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-
-        self.callers.write().unwrap().insert((path.to_owned(), Method::GET), RwLock::new(Box::new(op)));
+        let mut callers = Arc::get_mut(&mut self.callers).unwrap();
+        callers.insert((path.to_owned(), Method::GET), Arc::new(op));
     }
 
     pub fn listen(&mut self, port: u16) {
@@ -55,12 +55,14 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
                     async move {
                         let ev = ev.to_owned();
                         let callers = callers.to_owned();
-                        let callers = callers.read().unwrap();
                         let op = callers.get(&(req.uri().path().to_owned(), req.method().clone()));
                         match op {
-                            Some(mut op) => {
-                                let mut op = op.write().unwrap();
-                                op(req, ev)
+                            Some(op) => {
+                                let mut op = op.clone();
+                                unsafe {
+                                    let op = Arc::get_mut_unchecked(&mut op);
+                                    op(req, ev)
+                                }
                             },
                             None => {
                                 Ok(Response::builder()
@@ -69,7 +71,6 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
                                     .unwrap())
                             }
                         }
-                        // op(req, ev)
                     }
                 }));
 

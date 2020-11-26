@@ -63,8 +63,6 @@ pub trait ClusterManager: Send {
 
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
-    // fn get_conn(&self, node_id: &String) -> Option<Arc<TcpStream>>;
-
     fn join(&mut self);
 
     fn leave(&self);
@@ -99,10 +97,6 @@ impl ClusterManager for NoClusterManager {
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo, RandomState>>> {
         unimplemented!()
     }
-
-    // fn get_conn(&self, _node_id: &String) -> Option<Arc<TcpStream>> {
-    //     unimplemented!()
-    // }
 
     fn join(&mut self) {
         unimplemented!()
@@ -387,7 +381,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let net_server = self.create_net_server();
         self.event_bus_port = net_server.port;
         self.registry_in_cm();
-        info!("start event bus on: {}:{}", self.options.vertx_host, self.event_bus_port);
+        info!("start event bus on: tcp://{}:{}", self.options.vertx_host, self.event_bus_port);
 
         self.prepare_consumer_msg(receiver, local_consumers, local_cf, pool, local_sender);
     }

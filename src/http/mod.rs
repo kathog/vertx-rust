@@ -1,19 +1,15 @@
-use crate::vertx::{RUNTIME, ClusterManager, EventBus};
-use std::sync::{Arc, RwLock, Mutex};
+use crate::vertx::{ClusterManager, EventBus};
+use std::sync::{Arc};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use hyper::{Body, Request, Response, Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::http::Error;
-use hyper::client::HttpConnector;
 use hyper::server::conn::AddrStream;
 use hyper::server::Server;
 use log::info;
-use tokio::runtime::{Runtime, Builder};
-use futures::Future;
-use std::thread::spawn;
+use tokio::runtime::{Runtime};
 use hashbrown::HashMap;
-use std::borrow::Borrow;
 
 pub struct HttpServer<CM:'static + ClusterManager + Send + Sync> {
 
@@ -34,16 +30,16 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
         }
     }
 
-    pub fn get<OP>(&mut self, path: &str, mut op: OP)
+    pub fn get<OP>(&mut self, path: &str, op: OP)
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        let mut callers = Arc::get_mut(&mut self.callers).unwrap();
+        let callers = Arc::get_mut(&mut self.callers).unwrap();
         callers.insert((path.to_owned(), Method::GET), Arc::new(op));
     }
 
     pub fn listen(&mut self, port: u16) {
         let ev = self.event_bus.as_ref().unwrap().clone();
 
-        let mut callers = self.callers.clone();
+        let callers = self.callers.clone();
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
         let new_service = make_service_fn(move |_conn: &AddrStream| {
             let ev = ev.clone();
@@ -81,7 +77,7 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
         self.rt.spawn( async move{
             let server = Server::bind(&addr).serve(new_service);
             info!("Listening on http://{}", addr);
-            server.await;
+            let _ = server.await;
         });
     }
 

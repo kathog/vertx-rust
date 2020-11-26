@@ -3,12 +3,14 @@ use vertx_rust::net::NetServer;
 use simple_logger::SimpleLogger;
 use crossbeam_channel::bounded;
 use vertx_rust::http::HttpServer;
-use hyper::{StatusCode, Version};
+use hyper::{StatusCode};
 use hyper::Response;
 use log::LevelFilter;
 
 fn main() {
-    SimpleLogger::new().with_module_level("hyper", LevelFilter::Info)
+    SimpleLogger::new()
+        .with_module_level("h2", LevelFilter::Info)
+        .with_module_level("hyper", LevelFilter::Info)
         .with_module_level("tracing", LevelFilter::Info).init().unwrap();
 
     let vertx_options = VertxOptions::default();
@@ -40,17 +42,14 @@ Content-Length: 16
     });
 
     let mut http_server = HttpServer::new(Some(event_bus.clone()));
-    http_server.get("/", move |req, ev| {
+    http_server.get("/", move |_req, ev| {
         let (tx,rx) = bounded(1);
         ev.request("test.01", b"UP".to_vec(), move |m, _| {
             let _ = tx.send(m.body());
         });
         let body = rx.recv().unwrap();
-        // let body = b"{\"health\": \"UP\"}";
-
         Ok(Response::builder()
             .status(StatusCode::OK)
-            // .version(Version::HTTP_2)
             .header("content-type", "application/json")
             .body(body.to_vec().into())
             .unwrap())

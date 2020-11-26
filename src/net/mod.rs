@@ -1,7 +1,7 @@
 use crate::vertx::{RUNTIME, Message, EventBus, ClusterManager};
 use tokio::net::{TcpListener};
 use tokio::prelude::*;
-use bytes::{BytesMut, BufMut};
+use bytes::{BytesMut};
 use crossbeam_channel::Sender;
 use std::sync::Arc;
 use log::{info, error};

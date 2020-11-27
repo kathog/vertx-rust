@@ -53,8 +53,7 @@ Content-Length: 16
             .header("content-type", "application/json")
             .body(body.to_vec().into())
             .unwrap())
-    });
-    http_server.listen_with_default(9092, move |_, _| {
+    }).listen_with_default(9092, move |_, _| {
         Ok(Response::builder()
             .status(StatusCode::OK)
             .body("NIMA".as_bytes().into())

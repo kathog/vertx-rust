@@ -30,56 +30,58 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
         }
     }
 
-    pub fn get<OP>(&mut self, path: &str, op: OP)
+    pub fn get<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::GET, op);
+        self.add_op(path, Method::GET, op)
     }
 
-    pub fn post<OP>(&mut self, path: &str, op: OP)
+    pub fn post<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::POST, op);
+        self.add_op(path, Method::POST, op)
     }
 
-    pub fn put<OP>(&mut self, path: &str, op: OP)
+    pub fn put<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::PUT, op);
+        self.add_op(path, Method::PUT, op)
     }
 
-    pub fn delete<OP>(&mut self, path: &str, op: OP)
+    pub fn delete<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::DELETE, op);
+        self.add_op(path, Method::DELETE, op)
     }
 
-    pub fn head<OP>(&mut self, path: &str, op: OP)
+    pub fn head<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::HEAD, op);
+        self.add_op(path, Method::HEAD, op)
     }
 
-    pub fn patch<OP>(&mut self, path: &str, op: OP)
+    pub fn patch<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::PATCH, op);
+        self.add_op(path, Method::PATCH, op)
     }
 
-    pub fn options<OP>(&mut self, path: &str, op: OP)
+    pub fn options<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::OPTIONS, op);
+        self.add_op(path, Method::OPTIONS, op)
     }
 
-    pub fn connect<OP>(&mut self, path: &str, op: OP)
+    pub fn connect<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::CONNECT, op);
+        self.add_op(path, Method::CONNECT, op)
     }
 
-    pub fn trace<OP>(&mut self, path: &str, op: OP)
+    pub fn trace<OP>(&mut self, path: &str, op: OP) -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
-        self.add_op(path, Method::TRACE, op);
+        self.add_op(path, Method::TRACE, op)
     }
 
-    fn add_op<OP>(&mut self, path: &str, method: Method,  op: OP)
+    fn add_op<OP>(&mut self, path: &str, method: Method,  op: OP)  -> &mut Self
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
 
         let callers = Arc::get_mut(&mut self.callers).unwrap();
         callers.insert((path.to_owned(), method), Arc::new(op));
+
+        return self;
     }
 
     pub fn listen_with_default<OP>(&mut self, port: u16, default: OP)

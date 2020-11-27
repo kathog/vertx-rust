@@ -21,8 +21,6 @@ pub struct HttpServer<CM:'static + ClusterManager + Send + Sync> {
 
 impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
 
-
-
     pub fn new(event_bus: Option<Arc<EventBus<CM>>>) -> HttpServer<CM> {
         HttpServer {
             port: 0,
@@ -34,8 +32,54 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
 
     pub fn get<OP>(&mut self, path: &str, op: OP)
         where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::GET, op);
+    }
+
+    pub fn post<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::POST, op);
+    }
+
+    pub fn put<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::PUT, op);
+    }
+
+    pub fn delete<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::DELETE, op);
+    }
+
+    pub fn head<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::HEAD, op);
+    }
+
+    pub fn patch<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::PATCH, op);
+    }
+
+    pub fn options<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::OPTIONS, op);
+    }
+
+    pub fn connect<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::CONNECT, op);
+    }
+
+    pub fn trace<OP>(&mut self, path: &str, op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+        self.add_op(path, Method::TRACE, op);
+    }
+
+    fn add_op<OP>(&mut self, path: &str, method: Method,  op: OP)
+        where OP: FnMut(Request<Body>,Arc<EventBus<CM>>,) -> Result<Response<Body>, Error> + 'static + Send + Sync {
+
         let callers = Arc::get_mut(&mut self.callers).unwrap();
-        callers.insert((path.to_owned(), Method::GET), Arc::new(op));
+        callers.insert((path.to_owned(), method), Arc::new(op));
     }
 
     pub fn listen_with_default<OP>(&mut self, port: u16, default: OP)

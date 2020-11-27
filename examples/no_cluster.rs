@@ -54,7 +54,12 @@ Content-Length: 16
             .body(body.to_vec().into())
             .unwrap())
     });
-    http_server.listen(9092);
+    http_server.listen_with_default(9092, move |req, ev| {
+        Ok(Response::builder()
+            .status(StatusCode::OK)
+            .body("NIMA".as_bytes().into())
+            .unwrap())
+    });
 
 
     vertx.start();

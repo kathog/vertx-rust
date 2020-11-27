@@ -13,7 +13,8 @@ fn main() {
         .with_module_level("hyper", LevelFilter::Info)
         .with_module_level("tracing", LevelFilter::Info).init().unwrap();
 
-    let vertx_options = VertxOptions::default();
+    let mut vertx_options = VertxOptions::default();
+    vertx_options.event_bus_options().event_bus_pool_size(6);
     let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
     let event_bus = vertx.event_bus();
 

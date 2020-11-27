@@ -8,7 +8,7 @@ use hyper::http::Error;
 use hyper::server::conn::AddrStream;
 use hyper::server::Server;
 use log::info;
-use tokio::runtime::{Runtime};
+use tokio::runtime::{Runtime, Builder};
 use hashbrown::HashMap;
 
 pub struct HttpServer<CM:'static + ClusterManager + Send + Sync> {
@@ -26,7 +26,7 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
             port: 0,
             event_bus,
             callers: Arc::new(HashMap::new()),
-            rt: Runtime::new().unwrap(),
+            rt: Builder::new_multi_thread().worker_threads(12).enable_all().build().unwrap(),
         }
     }
 
@@ -124,7 +124,7 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
 
         self.rt.spawn( async move{
             let server = Server::bind(&addr).serve(new_service);
-            info!("Listening on http://{}", addr);
+            info!("start http_server on http://{}", addr);
             let _ = server.await;
         });
     }
@@ -155,7 +155,7 @@ impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
 
         self.rt.spawn( async move{
             let server = Server::bind(&addr).serve(new_service);
-            info!("Listening on http://{}", addr);
+            info!("start http_server on http://{}", addr);
             let _ = server.await;
         });
     }

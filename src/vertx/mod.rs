@@ -18,7 +18,7 @@ use serde::export::PhantomData;
 use std::sync::Once;
 use tokio::net::TcpStream;
 use tokio::prelude::*;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Runtime, Builder};
 use std::convert::TryInto;
 use crate::net;
 use crossbeam_channel::*;
@@ -29,7 +29,7 @@ static EV_INIT: Once = Once::new();
 
 lazy_static! {
     pub static ref RUNTIME: Runtime = {
-        Runtime::new().unwrap()
+        Builder::new_multi_thread().enable_all().build().unwrap()
     };
 
     static ref TCPS : Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
@@ -115,9 +115,20 @@ impl ClusterManager for NoClusterManager {
 #[derive(Debug, Clone)]
 pub struct VertxOptions {
     worker_pool_size : usize,
-    vertx_host : String,
-    vertx_port : u16,
-    pub event_bus_options : EventBusOptions,
+    event_bus_options : EventBusOptions,
+}
+
+impl VertxOptions {
+
+    pub fn worker_pool_size(&mut self, size: usize) -> &mut Self {
+        self.worker_pool_size = size;
+        self
+    }
+
+    pub fn event_bus_options(&mut self) -> &mut EventBusOptions {
+        &mut self.event_bus_options
+    }
+
 }
 
 
@@ -129,8 +140,6 @@ impl Default for VertxOptions {
         let vertx_host = "127.0.0.1".to_owned();
         VertxOptions {
             worker_pool_size : cpus/2,
-            vertx_host : vertx_host.clone(),
-            vertx_port,
             event_bus_options: EventBusOptions::from((vertx_host, vertx_port)),
         }
     }
@@ -139,9 +148,28 @@ impl Default for VertxOptions {
 #[derive(Debug, Clone)]
 pub struct EventBusOptions {
 
-    pub event_bus_pool_size: usize,
+    event_bus_pool_size: usize,
     vertx_host : String,
     vertx_port : u16,
+}
+
+impl EventBusOptions {
+
+    pub fn event_bus_pool_size(&mut self, size: usize) -> &mut Self {
+        self.event_bus_pool_size = size;
+        self
+    }
+
+    pub fn host(&mut self, host: String) -> &mut Self {
+        self.vertx_host = host;
+        self
+    }
+
+    pub fn port(&mut self, port: u16) -> &mut Self {
+        self.vertx_port = port;
+        self
+    }
+
 }
 
 impl From<(String, u16)> for EventBusOptions {
@@ -256,11 +284,11 @@ impl Message {
             Some(addr) => {
                 data.extend_from_slice(&(addr.len() as i32).to_be_bytes());
                 data.extend_from_slice(addr.as_bytes());
-            }, 
+            },
             None => {
                 data.extend_from_slice(&(0 as i32).to_be_bytes());
             }
-        }    
+        }
         data.extend_from_slice(&self.port.to_be_bytes());
         data.extend_from_slice(&(self.host.len() as i32).to_be_bytes());
         data.extend_from_slice(self.host.as_bytes());
@@ -357,7 +385,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     fn set_cluster_manager(&mut self, cm: CM) {
         let mut m = cm;
         m.join();
-        self.cluster_manager = Arc::new(Some(m));    
+        self.cluster_manager = Arc::new(Some(m));
     }
 
     fn start (&self) {
@@ -381,7 +409,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         let net_server = self.create_net_server();
         self.event_bus_port = net_server.port;
         self.registry_in_cm();
-        info!("start event bus on: tcp://{}:{}", self.options.vertx_host, self.event_bus_port);
+        info!("start event_bus on: tcp://{}:{}", self.options.vertx_host, self.event_bus_port);
 
         self.prepare_consumer_msg(receiver, local_consumers, local_cf, pool, local_sender);
     }

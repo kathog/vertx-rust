@@ -149,6 +149,7 @@ impl Default for VertxOptions {
 pub struct EventBusOptions {
 
     event_bus_pool_size: usize,
+    event_bus_queue_size: usize,
     vertx_host : String,
     vertx_port : u16,
 }
@@ -170,6 +171,11 @@ impl EventBusOptions {
         self
     }
 
+    pub fn event_bus_queue_size(&mut self, size: usize) -> &mut Self {
+        self.event_bus_queue_size = size;
+        self
+    }
+
 }
 
 impl From<(String, u16)> for EventBusOptions {
@@ -180,6 +186,7 @@ impl From<(String, u16)> for EventBusOptions {
             event_bus_pool_size : cpus/2,
             vertx_host : opts.0,
             vertx_port : opts.1,
+            event_bus_queue_size: 2000,
         }
     }
 }
@@ -192,7 +199,7 @@ impl Default for EventBusOptions {
             event_bus_pool_size : cpus/2,
             vertx_host : String::from("127.0.0.1"),
             vertx_port,
-            // cluster_manager: None
+            event_bus_queue_size: 2000
         }
     }
 }
@@ -398,7 +405,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
     }
 
     fn init(&mut self) {
-        let (sender, receiver) : (Sender<Message>, Receiver<Message>) = bounded(2000);
+        let (sender, receiver) : (Sender<Message>, Receiver<Message>) = bounded(self.options.event_bus_queue_size);
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();

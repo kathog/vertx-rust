@@ -14,7 +14,7 @@ fn main() {
         .with_module_level("tracing", LevelFilter::Info).init().unwrap();
 
     let mut vertx_options = VertxOptions::default();
-    vertx_options.event_bus_options().event_bus_pool_size(6);
+    vertx_options.event_bus_options().event_bus_pool_size(6).event_bus_queue_size(1024);
     let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
     let event_bus = vertx.event_bus();
 

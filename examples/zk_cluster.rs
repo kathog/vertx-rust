@@ -13,12 +13,12 @@ fn main() {
     vertx.set_cluster_manager(zk);
     let event_bus = vertx.event_bus();
 
-    event_bus.consumer("test.01", move |m, _| {
+    event_bus.local_consumer("test.01", move |m, _| {
         let body = m.body();
         let response = format!("{{\"health\": \"{code}\"}}", code=std::str::from_utf8(&body.to_vec()).unwrap());
         m.reply(response.into_bytes());
     });
-    let net_server = NetServer::new(Some(event_bus.clone()));
+    let net_server = vertx.create_net_server();
     net_server.listen(9091, move |_req, ev| {
         let mut resp = vec![];
         let (tx,rx) = bounded(1);

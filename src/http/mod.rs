@@ -21,7 +21,7 @@ pub struct HttpServer<CM:'static + ClusterManager + Send + Sync> {
 
 impl <CM:'static + ClusterManager + Send + Sync>HttpServer<CM> {
 
-    pub fn new(event_bus: Option<Arc<EventBus<CM>>>) -> HttpServer<CM> {
+    pub(crate) fn new(event_bus: Option<Arc<EventBus<CM>>>) -> HttpServer<CM> {
         HttpServer {
             port: 0,
             event_bus,

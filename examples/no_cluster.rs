@@ -1,8 +1,6 @@
 use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
-use vertx_rust::net::NetServer;
 use simple_logger::SimpleLogger;
 use crossbeam_channel::bounded;
-use vertx_rust::http::HttpServer;
 use hyper::{StatusCode};
 use hyper::Response;
 use log::LevelFilter;
@@ -23,7 +21,7 @@ fn main() {
         let response = format!("{{\"health\": \"{code}\"}}", code=std::str::from_utf8(&body.to_vec()).unwrap());
         m.reply(response.into_bytes());
     });
-    let net_server = NetServer::new(Some(event_bus.clone()));
+    let net_server = vertx.create_net_server();
     net_server.listen(9091, move |_req, ev| {
         let mut resp = vec![];
         let (tx,rx) = bounded(1);
@@ -42,7 +40,7 @@ Content-Length: 16
         resp
     });
 
-    let mut http_server = HttpServer::new(Some(event_bus.clone()));
+    let mut http_server = vertx.create_http_server();
     http_server.get("/", move |_req, ev| {
         let (tx,rx) = bounded(1);
         ev.request("test.01", b"UP".to_vec(), move |m, _| {

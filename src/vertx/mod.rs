@@ -23,6 +23,7 @@ use std::convert::TryInto;
 use crate::net;
 use crossbeam_channel::*;
 use crate::net::NetServer;
+use crate::http::HttpServer;
 
 
 static EV_INIT: Once = Once::new();
@@ -340,6 +341,14 @@ impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
 
     pub fn start(&self) {
         self.event_bus.start();
+    }
+
+    pub fn create_http_server (&self) -> HttpServer<CM> {
+        HttpServer::new(Some(self.event_bus.clone()))
+    }
+
+    pub fn create_net_server(&self) -> &'static mut NetServer<CM> {
+        NetServer::new(Some(self.event_bus.clone()))
     }
 
     pub fn event_bus(&self) -> Arc<EventBus<CM>> {

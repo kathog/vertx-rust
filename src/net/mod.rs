@@ -15,7 +15,7 @@ pub struct NetServer<CM:'static + ClusterManager + Send + Sync> {
 
 impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
 
-    pub fn new(event_bus: Option<Arc<EventBus<CM>>>) -> &'static mut NetServer<CM> {
+    pub(crate) fn new(event_bus: Option<Arc<EventBus<CM>>>) -> &'static mut NetServer<CM> {
         Box::leak(Box::new(NetServer::<CM> {
             port: 0,
             event_bus

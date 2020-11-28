@@ -39,7 +39,7 @@ Transfer/sec:     22.50MB
 ```
 Tcp server from **no_cluster** example:
 ```
-wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/                                                                                
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/
 Running 2m test @ http://127.0.0.1:9091/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev

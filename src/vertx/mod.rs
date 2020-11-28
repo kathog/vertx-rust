@@ -1,6 +1,4 @@
 use core::fmt::Debug;
-// use rayon::prelude::*;
-use rayon::{ThreadPoolBuilder, ThreadPool};
 use hashbrown::HashMap;
 use std::{
     sync::{
@@ -30,6 +28,10 @@ static EV_INIT: Once = Once::new();
 
 lazy_static! {
     pub static ref RUNTIME: Runtime = {
+        Builder::new_multi_thread().enable_all().build().unwrap()
+    };
+
+    pub static ref RUNTIME_EB: Runtime = {
         Builder::new_multi_thread().enable_all().build().unwrap()
     };
 
@@ -264,6 +266,17 @@ impl Message {
             self.replay = None;
         }
     }
+
+    pub fn generate() -> Message {
+        Message {
+            address: Some("test.01".to_string()),
+            replay: Some(format!("__vertx.reply.{}", uuid::Uuid::new_v4().to_string())),
+            body: Arc::new(uuid::Uuid::new_v4().to_string().into_bytes()),
+            port: 44532 as i32,
+            host: "localhost".to_string(),
+            ..Default::default()
+        }
+    }
 }
 
 //Implementation of deserialize byte array to message
@@ -344,8 +357,6 @@ impl Message {
 pub struct Vertx<CM:'static + ClusterManager + Send + Sync> {
     #[allow(dead_code)]
     options : VertxOptions,
-    #[allow(dead_code)]
-    worker_pool: ThreadPool,
     event_bus: Arc<EventBus<CM>>,
     ph: PhantomData<CM>
 }
@@ -353,11 +364,9 @@ pub struct Vertx<CM:'static + ClusterManager + Send + Sync> {
 impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
 
     pub fn new (options: VertxOptions) -> Vertx<CM> {
-        let worker_pool = ThreadPoolBuilder::new().num_threads(options.worker_pool_size).build().unwrap();
         let event_bus = EventBus::<CM>::new(options.event_bus_options.clone());
         return Vertx {
             options,
-            worker_pool,
             event_bus : Arc::new(event_bus),
             ph: PhantomData,
         };
@@ -370,6 +379,7 @@ impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
 
 
     pub fn start(&self) {
+        info!("start vertx version {}", env!("CARGO_PKG_VERSION"));
         self.event_bus.start();
     }
 
@@ -395,7 +405,6 @@ impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
 
 pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     options : EventBusOptions,
-    event_bus_pool: Arc<ThreadPool>,
     consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>,) + Send + Sync>>>,
     local_consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>,) + Send + Sync>>>,
     callback_functions: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>,) + Send + Sync>>>>,
@@ -410,12 +419,10 @@ pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
 impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
     pub fn new (options: EventBusOptions) -> EventBus<CM> {
-        let event_bus_pool = ThreadPoolBuilder::new().num_threads(options.event_bus_pool_size).build().unwrap();
         let (sender, _receiver) : (Sender<Message>, Receiver<Message>) = unbounded();
         let receiver_joiner = std::thread::spawn(||{});
         let ev = EventBus {
             options,
-            event_bus_pool : Arc::new(event_bus_pool),
             consumers: Arc::new(HashMap::new()),
             local_consumers: Arc::new(HashMap::new()),
             callback_functions: Arc::new(Mutex::new(HashMap::new())),
@@ -448,21 +455,19 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();
-        let pool = self.event_bus_pool.clone();
         let local_sender = self.sender.lock().unwrap().clone();
         self.self_arc = Some(unsafe { Arc::from_raw(self) });
 
         let net_server = self.create_net_server();
         self.event_bus_port = net_server.port;
         self.registry_in_cm();
-        info!("start event_bus on: tcp://{}:{}", self.options.vertx_host, self.event_bus_port);
+        info!("start event_bus on tcp://{}:{}", self.options.vertx_host, self.event_bus_port);
 
-        self.prepare_consumer_msg(receiver, local_consumers, local_cf, pool, local_sender);
+        self.prepare_consumer_msg(receiver, local_consumers, local_cf, local_sender);
     }
 
     fn prepare_consumer_msg(&mut self, receiver: Receiver<Message>, local_consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>,
                             local_cf: Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>>,
-                            pool: Arc<ThreadPool>,
                             local_sender: Sender<Message>) {
         let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
@@ -481,7 +486,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
                         let inner_local_consumers = local_local_consumers.clone();
 
 
-                        pool.spawn(move || {
+                        RUNTIME_EB.spawn(async move  {
                             let mut mut_msg = msg;
                             match mut_msg.address.clone() {
                                 Some(address) => {

@@ -6,7 +6,7 @@
 
 # Introduction
 
-[vertx-rust](https://github.com/kathog/vertx-rust) its a simple implementation of [vert.x](https://github.com/eclipse-vertx/vert.x) in Rust. The vertx-rust engine is based on [crossbeam-channel](https://github.com/crossbeam-rs/crossbeam-channel) and [rayon](https://github.com/rayon-rs/rayon) as a multi-threaded nonblocking event-driven engine.
+[vertx-rust](https://github.com/kathog/vertx-rust) its a simple implementation of [vert.x](https://github.com/eclipse-vertx/vert.x) in Rust. The vertx-rust engine is based on [crossbeam-channel](https://github.com/crossbeam-rs/crossbeam-channel) and [tokio](https://github.com/tokio-rs/tokio) as a multi-threaded nonblocking event-driven engine.
 Currently, the only implementation is the cluster version based on zookeeper as a cluster manager and standalone instance. In the future there will also be other implementations of the cluster manager
 
 # Features
@@ -27,27 +27,27 @@ Benchmarks on Dell G3 with Intel Core i7-8750H
 
 Http server from **no_cluster** example:
 ```
-wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/                                                                                                                                ✔  1m 30s   21:44:52  
 Running 2m test @ http://127.0.0.1:9092/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.63ms    1.59ms  34.87ms   75.80%
-    Req/Sec    38.32k     4.30k   58.83k    70.42%
-  17140064 requests in 1.50m, 1.98GB read
-Requests/sec: 190307.69
-Transfer/sec:     22.50MB
+    Latency     2.56ms    1.87ms  39.83ms   82.74%
+    Req/Sec    40.29k     4.66k   63.80k    70.89%
+  18022166 requests in 1.50m, 2.08GB read
+Requests/sec: 200034.56
+Transfer/sec:     23.66MB
 ```
 Tcp server from **no_cluster** example:
 ```
-wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/                                                                                                                                ✔  1m 30s   09:10:44  
 Running 2m test @ http://127.0.0.1:9091/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.20ms    2.12ms  38.74ms   92.04%
-    Req/Sec    48.20k     7.05k   96.87k    73.34%
-  21560750 requests in 1.50m, 2.41GB read
-Requests/sec: 239376.03
-Transfer/sec:     27.39MB
+    Latency     2.47ms    3.20ms  99.24ms   91.42%
+    Req/Sec    50.67k     9.84k  105.72k    75.66%
+  22653909 requests in 1.50m, 2.53GB read
+Requests/sec: 251512.38
+Transfer/sec:     28.78MB
 ```
 
 ## Microbenchmarks
@@ -65,6 +65,13 @@ Found 8 outliers among 100 measurements (8.00%)
 
 vertx_publish           time:   [1.8024 us 1.8305 us 1.8527 us]                           
 
+serialize_message       time:   [203.27 ns 203.72 ns 204.20 ns]                              
+Found 6 outliers among 100 measurements (6.00%)
+  6 (6.00%) high mild
+
+deserialize_message     time:   [145.16 ns 145.46 ns 145.79 ns]                                
+Found 3 outliers among 100 measurements (3.00%)
+  3 (3.00%) high severe
 ```
 
 # Work with vertx-rust

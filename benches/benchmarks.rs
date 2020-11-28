@@ -32,6 +32,17 @@ fn vertx(_c: &mut Criterion) {
     _c.bench_function("vertx_publish", |b| b.iter(|| {
         event_bus.send("test.01", b"UP".to_vec());
     }));
+
+    let m = Message::generate();
+    let bytes = m.to_vec().unwrap()[4..].to_vec();
+
+    _c.bench_function("serialize_message", |b| b.iter(|| {
+        m.to_vec().unwrap()
+    }));
+
+    _c.bench_function("deserialize_message", |b| b.iter(|| {
+        Message::from(bytes.clone());
+    }));
 }
 
 

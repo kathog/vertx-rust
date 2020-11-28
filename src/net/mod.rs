@@ -87,7 +87,7 @@ impl <CM:'static + ClusterManager + Send + Sync>NetServer<CM> {
     where OP: Fn(&Vec<u8>, Arc<EventBus<CM>>) -> Vec<u8> + 'static + Send + Sync + Copy {
         let listener = RUNTIME.block_on(TcpListener::bind(format!("0.0.0.0:{}", port))).unwrap();
         self.port = listener.local_addr().unwrap().port();
-        info!("start net_server listen on port: {}", self.port);
+        info!("start net_server on tcp://0.0.0.0:{}", self.port);
         std::thread::spawn(move || {
             loop {
                 let (mut socket, _) = RUNTIME.block_on(listener.accept()).unwrap();

@@ -25,17 +25,18 @@ fn main() {
     net_server.listen(9091, move |_req, ev| {
         let mut resp = vec![];
         let (tx,rx) = bounded(1);
-        ev.request("test.01", b"UP".to_vec(), move |m, _| {
+        ev.request("test.01", uuid::Uuid::new_v4().to_string().into_bytes(), move |m, _| {
             let _ = tx.send(m.body());
         });
         let body = rx.recv().unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
         let data = format!(r#"
 HTTP/1.1 200 OK
 content-type: application/json
 Date: Sun, 03 May 2020 07:05:15 GMT
-Content-Length: 16
+Content-Length: {len}
 
-{json_body}"#, json_body=std::str::from_utf8(&body).unwrap());
+{json_body}"#, len=body.len(), json_body=body);
         resp.extend_from_slice(data.as_bytes());
         resp
     });

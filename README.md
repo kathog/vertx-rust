@@ -23,7 +23,34 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 
 Benchmarks on Dell G3 with Intel Core i7-8750H
 
-## Microbenchmark
+## Wrk benchmarks
+
+Http server from **no_cluster** example:
+```
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/
+Running 2m test @ http://127.0.0.1:9092/
+  5 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.63ms    1.59ms  34.87ms   75.80%
+    Req/Sec    38.32k     4.30k   58.83k    70.42%
+  17140064 requests in 1.50m, 1.98GB read
+Requests/sec: 190307.69
+Transfer/sec:     22.50MB
+```
+Tcp server from **no_cluster** example:
+```
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/
+Running 2m test @ http://127.0.0.1:9091/
+  5 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.20ms    2.12ms  38.74ms   92.04%
+    Req/Sec    48.20k     7.05k   96.87k    73.34%
+  21560750 requests in 1.50m, 2.41GB read
+Requests/sec: 239376.03
+Transfer/sec:     27.39MB
+```
+
+## Microbenchmarks
 ```
 vertx_request           time:   [8.1251 us 8.1982 us 8.2809 us]                           
 Found 7 outliers among 100 measurements (7.00%)
@@ -107,4 +134,3 @@ vertx.start();
 ```
 
 More examples on: [examples](https://github.com/kathog/vertx-rust/tree/main/examples)
-

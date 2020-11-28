@@ -27,7 +27,7 @@ Benchmarks on Dell G3 with Intel Core i7-8750H
 
 Http server from **no_cluster** example:
 ```
-wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/                                                                                                                                ✔  1m 30s   21:44:52  
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/
 Running 2m test @ http://127.0.0.1:9092/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
@@ -39,7 +39,7 @@ Transfer/sec:     23.66MB
 ```
 Tcp server from **no_cluster** example:
 ```
-wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/                                                                                                                                ✔  1m 30s   09:10:44  
+wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/
 Running 2m test @ http://127.0.0.1:9091/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev

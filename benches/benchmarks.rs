@@ -12,7 +12,7 @@ fn vertx(_c: &mut Criterion) {
 
     event_bus.local_consumer("test.01", move |m, _| {
         let body = m.body();
-        let response = format!("{{\"health\": \"{code}\"}}", code=std::str::from_utf8(&body.to_vec()).unwrap());
+        let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
         m.reply(response.into_bytes());
     });
 

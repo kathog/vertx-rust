@@ -36,42 +36,53 @@ lazy_static! {
     static ref TCPS : Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
 }
 
+//Struct represented information about vertx node server
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
 pub struct ServerID {
     pub port: i32,
     pub host: String
 }
 
-
+//Struct represented information about vertx node
 #[jvm_object(io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo,1)]
 pub struct ClusterNodeInfo {
     pub nodeId: String,
     pub serverID: ServerID,
 }
 
-
+//Interface of cluster manager support integrations of cluster nodes
 pub trait ClusterManager: Send {
 
+    //Register current node as vertx sub
     fn add_sub(&self, address: String);
 
+    //Register current node as vertx node in cluster
     fn set_cluster_node_info(&mut self, node: ClusterNodeInfo);
 
+    //Get uniquie node id in cluster
     fn get_node_id(&self) -> String;
 
+    //Get id list of all nodes in cluster
     fn get_nodes(&self) -> Vec<String>;
 
+    //Get list of all nodes in cluster
     fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
 
+    //Get all registered subs and nodes in this subs
     fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
 
+    //Join current node to vertx cluster
     fn join(&mut self);
 
+    //Leave current cluster from node
     fn leave(&self);
 
+    //Round rubin index of nodes
     fn next(&self, len: usize) -> usize;
 
 }
 
+//Empty implementation of cluster manager to create vertx standalone instance
 pub struct NoClusterManager;
 
 impl ClusterManager for NoClusterManager {
@@ -112,10 +123,12 @@ impl ClusterManager for NoClusterManager {
     }
 }
 
-
+//Vertx options
 #[derive(Debug, Clone)]
 pub struct VertxOptions {
+    //Worker pool size, default number of cpu/2
     worker_pool_size : usize,
+    //Event bus options
     event_bus_options : EventBusOptions,
 }
 
@@ -146,12 +159,16 @@ impl Default for VertxOptions {
     }
 }
 
+//Event bus options
 #[derive(Debug, Clone)]
 pub struct EventBusOptions {
-
+    //Event bus pool size, default number of cpu/2
     event_bus_pool_size: usize,
+    //Event bus queue size, default is 2000
     event_bus_queue_size: usize,
+    //Event bus host, default 127.0.0.1
     vertx_host : String,
+    //Event bus port, default 0
     vertx_port : u16,
 }
 
@@ -205,16 +222,26 @@ impl Default for EventBusOptions {
     }
 }
 
+//Message used in event bus in standalone instance and cluster
 #[derive(Clone, Default, Debug)]
 pub struct Message {
+    //Destination sub address
     address: Option<String>,
+    //Replay sub address
     replay: Option<String>,
+    //Binary body content
     body: Arc<Vec<u8>>,
+    //Protocol version
     protocol_version: i32,
+    //System codec id
     system_codec_id: i32,
+    //Port to replay message
     port: i32,
+    //Host to replay message
     host: String,
+    //Headers
     headers: i32,
+    //Message send as publish to all nodes in sub
     publish: bool
 }
 
@@ -225,6 +252,7 @@ impl Message {
         return self.body.clone();
     }
 
+    //Reply message to event bus
     #[inline]
     pub fn reply(&mut self, mut data: Vec<u8>) {
         unsafe {
@@ -238,10 +266,11 @@ impl Message {
     }
 }
 
+//Implementation of deserialize byte array to message
 impl From<Vec<u8>> for Message {
     #[inline]
     fn from(msg: Vec<u8>) -> Self {
-        let mut idx = 3;
+        let mut idx = 3; //Ignore first 3 bytes
         let len_addr = i32::from_be_bytes(msg[idx..idx+4].try_into().unwrap()) as usize;
         idx += 4;
         let address = String::from_utf8(msg[idx..idx+len_addr].to_vec()).unwrap();
@@ -279,6 +308,7 @@ impl From<Vec<u8>> for Message {
 
 impl Message {
 
+    //Serialize message to byte array
     #[inline]
     pub fn to_vec(&self) -> Result<Vec<u8>, &str> {
         let mut data = vec![];

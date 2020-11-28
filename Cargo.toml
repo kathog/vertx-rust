@@ -1,8 +1,13 @@
 [package]
 name = "vertx-rust"
 version = "0.1.0"
-authors = ["nerull"]
+authors = ["Daniel Lewiński <nerull@craftsoft.eu>"]
 edition = "2018"
+description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
+license-file = "LICENSE"
+homepage = "https://github.com/kathog/vertx-rust"
+repository = "https://github.com/kathog/vertx-rust"
+readme = "README.md"
 
 [features]
 default = []

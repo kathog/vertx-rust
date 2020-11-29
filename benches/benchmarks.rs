@@ -5,32 +5,31 @@ extern crate lazy_static;
 use crossbeam_channel::unbounded;
 use vertx_rust::vertx::Message;
 extern crate vertx_rust;
-use vertx_rust::vertx::*;
 use std::sync::Arc;
+use vertx_rust::vertx::*;
 
 lazy_static! {
     static ref VERTX: Vertx<NoClusterManager> = {
         let vertx_options = VertxOptions::default();
-        let vertx =  Vertx::<NoClusterManager>::new(vertx_options);
+        let vertx = Vertx::<NoClusterManager>::new(vertx_options);
         vertx
     };
-
-    static ref EB: Arc<EventBus<NoClusterManager>> = {
-        VERTX.event_bus()
-    };
+    static ref EB: Arc<EventBus<NoClusterManager>> = { VERTX.event_bus() };
 }
 
 #[bench]
 fn vertx_request(b: &mut test::Bencher) {
-
     EB.local_consumer("test.01", move |m, _| {
         let body = m.body();
-        let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
+        let response = format!(
+            r#"{{"health": "{code}"}}"#,
+            code = std::str::from_utf8(&body.to_vec()).unwrap()
+        );
         m.reply(response.into_bytes());
     });
 
     b.iter(|| {
-        let (tx,rx) = unbounded();
+        let (tx, rx) = unbounded();
         EB.request("test.01", b"UP".to_vec(), move |m, _| {
             let _body = m.body();
             let _ = tx.send(1);
@@ -41,10 +40,12 @@ fn vertx_request(b: &mut test::Bencher) {
 
 #[bench]
 fn vertx_send(b: &mut test::Bencher) {
-
     EB.local_consumer("test.01", move |m, _| {
         let body = m.body();
-        let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
+        let response = format!(
+            r#"{{"health": "{code}"}}"#,
+            code = std::str::from_utf8(&body.to_vec()).unwrap()
+        );
         m.reply(response.into_bytes());
     });
 
@@ -55,10 +56,12 @@ fn vertx_send(b: &mut test::Bencher) {
 
 #[bench]
 fn vertx_publish(b: &mut test::Bencher) {
-
     EB.local_consumer("test.01", move |m, _| {
         let body = m.body();
-        let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
+        let response = format!(
+            r#"{{"health": "{code}"}}"#,
+            code = std::str::from_utf8(&body.to_vec()).unwrap()
+        );
         m.reply(response.into_bytes());
     });
 
@@ -71,9 +74,7 @@ fn vertx_publish(b: &mut test::Bencher) {
 fn serialize_message(b: &mut test::Bencher) {
     let m = Message::generate();
 
-    b.iter(|| {
-        m.to_vec().unwrap()
-    });
+    b.iter(|| m.to_vec().unwrap());
 }
 
 #[bench]

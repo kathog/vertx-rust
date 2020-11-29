@@ -24,12 +24,9 @@ extern crate jvm_serializable;
 #[macro_use]
 extern crate lazy_static;
 
-
-pub mod vertx;
-pub mod net;
 pub mod http;
+pub mod net;
+pub mod vertx;
 
 #[cfg(feature = "zk")]
 pub mod zk;
-
-

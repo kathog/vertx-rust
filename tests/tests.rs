@@ -10,16 +10,15 @@ extern crate log;
 mod tests {
 
     extern crate vertx_rust;
-    use vertx_rust::vertx::*;
-    use std::sync::Arc;
-    use serde::{Serialize, Deserialize};
     use jvm_serializable::java::io::*;
+    use serde::{Deserialize, Serialize};
+    use std::sync::Arc;
     use tokio::net::TcpListener;
     use tokio::prelude::*;
-
+    use vertx_rust::vertx::*;
 
     #[test]
-    fn tcp_test () {
+    fn tcp_test() {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let listener = runtime.block_on(TcpListener::bind("0.0.0.0:9091")).unwrap();
 
@@ -27,7 +26,6 @@ mod tests {
             let (mut socket, _) = runtime.block_on(listener.accept()).unwrap();
 
             runtime.spawn(async move {
-
                 let mut request: Vec<u8> = vec![];
                 let mut buf = [0; 1024];
 
@@ -50,7 +48,8 @@ Date: Sun, 03 May 2020 07:05:15 GMT
 Content-Length: 14
 
 {"code": "UP"}
-"#.to_string();
+"#
+                    .to_string();
                     if let Err(e) = socket.write_all(data.as_bytes()).await {
                         eprintln!("failed to write to socket; err = {:?}", e);
                         return;
@@ -63,9 +62,8 @@ Content-Length: 14
     #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
     struct ServerID {
         port: i32,
-        host: String
+        host: String,
     }
-
 
     #[jvm_object(io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo,1)]
     struct ClusterNodeInfo {
@@ -87,39 +85,53 @@ Content-Length: 14
     #[test]
     // #[ignore = "tymczasowo"]
     fn vertx_test() {
-
         lazy_static! {
-            static ref VERTX : Vertx::<NoClusterManager> = {
+            static ref VERTX: Vertx::<NoClusterManager> = {
                 let vertx_options = VertxOptions::default();
                 debug!("{:?}", vertx_options);
                 Vertx::new(vertx_options)
             };
-            static ref EVENT_BUS : Arc<EventBus::<NoClusterManager>> = VERTX.event_bus();
-
-            static ref COUNT : std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            static ref EVENT_BUS: Arc<EventBus::<NoClusterManager>> = VERTX.event_bus();
+            static ref COUNT: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
         }
 
         EVENT_BUS.consumer("consume1", |m, _| {
             let body = m.body();
             // println!("{:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
-            m.reply(format!("response => {}", std::str::from_utf8(&body).unwrap()).as_bytes().to_vec());
+            m.reply(
+                format!("response => {}", std::str::from_utf8(&body).unwrap())
+                    .as_bytes()
+                    .to_vec(),
+            );
         });
 
         let time = std::time::Instant::now();
         for i in 0..100000 {
             // event_bus.request("consume1", format!("regest: {}", i));
             // count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            EVENT_BUS.request("consume1", format!("regest: {}", i).into_bytes(), move |m, _| {
-                let _body = m.body();
-                COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                // println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
-            });
+            EVENT_BUS.request(
+                "consume1",
+                format!("regest: {}", i).into_bytes(),
+                move |m, _| {
+                    let _body = m.body();
+                    COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // println!("set_callback_function {:?}, thread: {:?}", std::str::from_utf8(&body), std::thread::current().id());
+                },
+            );
         }
 
         // vertx.start();
         // std::thread::sleep(std::time::Duration::from_millis(1));
         let elapsed = time.elapsed();
-        println!("count {:?}, time: {:?}", COUNT.load(std::sync::atomic::Ordering::SeqCst), &elapsed);
-        println!("avg time: {:?} ns", (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128));
+        println!(
+            "count {:?}, time: {:?}",
+            COUNT.load(std::sync::atomic::Ordering::SeqCst),
+            &elapsed
+        );
+        println!(
+            "avg time: {:?} ns",
+            (&elapsed.as_nanos() / COUNT.load(std::sync::atomic::Ordering::SeqCst) as u128)
+        );
     }
 }

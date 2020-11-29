@@ -1,6 +1,5 @@
 use crossbeam_channel::bounded;
 use simple_logger::SimpleLogger;
-use vertx_rust::net::NetServer;
 use vertx_rust::vertx::{Vertx, VertxOptions};
 use vertx_rust::zk::ZookeeperClusterManager;
 

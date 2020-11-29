@@ -1,4 +1,4 @@
-use crate::vertx::{ClusterManager, EventBus, Message, RUNTIME};
+use crate::vertx::{message::Message, ClusterManager, EventBus, RUNTIME};
 use bytes::BytesMut;
 use crossbeam_channel::Sender;
 use log::{error, info};

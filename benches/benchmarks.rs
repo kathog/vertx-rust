@@ -3,7 +3,7 @@ extern crate test;
 #[macro_use]
 extern crate lazy_static;
 use crossbeam_channel::unbounded;
-use vertx_rust::vertx::Message;
+use vertx_rust::vertx::message::Message;
 extern crate vertx_rust;
 use std::sync::Arc;
 use vertx_rust::vertx::*;
@@ -14,7 +14,7 @@ lazy_static! {
         let vertx = Vertx::<NoClusterManager>::new(vertx_options);
         vertx
     };
-    static ref EB: Arc<EventBus<NoClusterManager>> = { VERTX.event_bus() };
+    static ref EB: Arc<EventBus<NoClusterManager>> = VERTX.event_bus();
 }
 
 #[bench]

@@ -48,7 +48,7 @@ impl ZookeeperClusterManager {
             ZooKeeper::connect(&format!("{}", zk_hosts), Duration::from_secs(1), |_| {}).unwrap();
         let exist_root = zookeeper.exists(&zk_root, false);
         match exist_root {
-            Ok(_) => return { ZookeeperClusterManager::construct(zk_hosts, zk_root) },
+            Ok(_) => return ZookeeperClusterManager::construct(zk_hosts, zk_root),
             Err(_) => {
                 let _ = zookeeper.create(
                     &zk_root,

@@ -1,4 +1,4 @@
-name: Rust
+name: Benchmarks
 
 on:
   push:
@@ -18,5 +18,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: Install nightly
       run: rustup install nightly
-    - name: Build
-      run: cargo +nightly build
+    - name: Run benchmarks
+      run: cargo +nightly bench

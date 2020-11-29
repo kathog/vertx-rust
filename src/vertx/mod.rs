@@ -22,6 +22,7 @@ use crate::net;
 use crossbeam_channel::*;
 use crate::net::NetServer;
 use crate::http::HttpServer;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 
 static EV_INIT: Once = Once::new();
@@ -36,6 +37,8 @@ lazy_static! {
     };
 
     static ref TCPS : Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
+
+    static ref DO_INVOKE : AtomicBool = AtomicBool::new(true);
 }
 
 //Struct represented information about vertx node server
@@ -401,6 +404,10 @@ impl <CM:'static + ClusterManager + Send + Sync>Vertx<CM> {
         });
         return self.event_bus.clone();
     }
+
+    pub fn stop (&self) {
+        DO_INVOKE.store(false, Ordering::SeqCst);
+    }
 }
 
 pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
@@ -413,7 +420,6 @@ pub struct EventBus<CM:'static + ClusterManager + Send + Sync> {
     cluster_manager: Arc<Option<CM>>,
     event_bus_port: u16,
     self_arc: Option<Arc<EventBus<CM>>>,
-
 }
 
 impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
@@ -430,7 +436,7 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
             receiver_joiner : Arc::new(receiver_joiner),
             cluster_manager: Arc::new(None),
             event_bus_port: 0,
-            self_arc: None
+            self_arc: None,
         };
         return ev;
     }
@@ -475,6 +481,9 @@ impl <CM:'static + ClusterManager + Send + Sync>EventBus<CM> {
 
         let joiner = std::thread::spawn(move || -> (){
             loop {
+                if !DO_INVOKE.load(Ordering::SeqCst) {
+                    return;
+                }
                 match receiver.recv() {
                     Ok(msg) => {
                         trace!("{:?}", msg);

@@ -1,50 +1,87 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+#![feature(test)]
+extern crate test;
+#[macro_use]
+extern crate lazy_static;
 use crossbeam_channel::unbounded;
+use vertx_rust::vertx::Message;
+extern crate vertx_rust;
+use vertx_rust::vertx::*;
+use std::sync::Arc;
 
+lazy_static! {
+    static ref VERTX: Vertx<NoClusterManager> = {
+        let vertx_options = VertxOptions::default();
+        let vertx =  Vertx::<NoClusterManager>::new(vertx_options);
+        vertx
+    };
 
-fn vertx(_c: &mut Criterion) {
-    extern crate vertx_rust;
-    use vertx_rust::vertx::*;
+    static ref EB: Arc<EventBus<NoClusterManager>> = {
+        VERTX.event_bus()
+    };
+}
 
-    let vertx_options = VertxOptions::default();
-    let vertx =  Vertx::<NoClusterManager>::new(vertx_options);
-    let event_bus = vertx.event_bus();
+#[bench]
+fn vertx_request(b: &mut test::Bencher) {
 
-    event_bus.local_consumer("test.01", move |m, _| {
+    EB.local_consumer("test.01", move |m, _| {
         let body = m.body();
         let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
         m.reply(response.into_bytes());
     });
 
-    _c.bench_function("vertx_request", |b| b.iter(|| {
+    b.iter(|| {
         let (tx,rx) = unbounded();
-        event_bus.request("test.01", b"UP".to_vec(), move |m, _| {
+        EB.request("test.01", b"UP".to_vec(), move |m, _| {
             let _body = m.body();
             let _ = tx.send(1);
         });
         let _ = rx.recv();
-    }));
+    });
+}
 
-    _c.bench_function("vertx_send", |b| b.iter(|| {
-        event_bus.send("test.01", b"UP".to_vec());
-    }));
+#[bench]
+fn vertx_send(b: &mut test::Bencher) {
 
-    _c.bench_function("vertx_publish", |b| b.iter(|| {
-        event_bus.send("test.01", b"UP".to_vec());
-    }));
+    EB.local_consumer("test.01", move |m, _| {
+        let body = m.body();
+        let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
+        m.reply(response.into_bytes());
+    });
 
+    b.iter(|| {
+        EB.send("test.01", b"UP".to_vec());
+    });
+}
+
+#[bench]
+fn vertx_publish(b: &mut test::Bencher) {
+
+    EB.local_consumer("test.01", move |m, _| {
+        let body = m.body();
+        let response = format!(r#"{{"health": "{code}"}}"#, code=std::str::from_utf8(&body.to_vec()).unwrap());
+        m.reply(response.into_bytes());
+    });
+
+    b.iter(|| {
+        EB.publish("test.01", b"UP".to_vec());
+    });
+}
+
+#[bench]
+fn serialize_message(b: &mut test::Bencher) {
+    let m = Message::generate();
+
+    b.iter(|| {
+        m.to_vec().unwrap()
+    });
+}
+
+#[bench]
+fn deserialize_message(b: &mut test::Bencher) {
     let m = Message::generate();
     let bytes = m.to_vec().unwrap()[4..].to_vec();
 
-    _c.bench_function("serialize_message", |b| b.iter(|| {
-        m.to_vec().unwrap()
-    }));
-
-    _c.bench_function("deserialize_message", |b| b.iter(|| {
+    b.iter(|| {
         Message::from(bytes.clone());
-    }));
+    });
 }
-
-
-criterion_group!(benches, vertx);
-criterion_main!(benches);

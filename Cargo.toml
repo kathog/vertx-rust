@@ -47,10 +47,5 @@ hyper = {git = "https://github.com/hyperium/hyper", features = ["full"] }
 #hyper = "0.13.9"
 
 [dev-dependencies]
-criterion = "0.3"
 simple_logger = "1.11.0"
 fp_rust = "0.1.39"
-
-[[bench]]
-name = "benchmarks"
-harness = false

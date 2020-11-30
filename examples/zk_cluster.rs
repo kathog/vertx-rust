@@ -1,10 +1,9 @@
 use crossbeam_channel::bounded;
-use simple_logger::SimpleLogger;
 use vertx_rust::vertx::{Vertx, VertxOptions};
 use vertx_rust::zk::ZookeeperClusterManager;
 
 fn main() {
-    SimpleLogger::new().init().unwrap();
+    pretty_env_logger::init_timed();
 
     let vertx_options = VertxOptions::default();
     let mut vertx = Vertx::new(vertx_options);

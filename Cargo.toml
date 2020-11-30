@@ -15,11 +15,13 @@ default = []
 
 zk = ["zookeeper"]
 tc = ["tcmalloc"]
+client = ["hyper-tls"]
 
 
 [dependencies]
 zookeeper = { version = "0.5.9", optional = true }
 tcmalloc = { version = "0.3", optional = true }
+hyper-tls = {version = "0.4", optional = true}
 rayon = "1.5.0"
 rustc-serialize = "0.3.24"
 serde = "1.0.117"
@@ -47,5 +49,4 @@ hyper = {git = "https://github.com/hyperium/hyper", features = ["full"] }
 #hyper = "0.13.9"
 
 [dev-dependencies]
-simple_logger = "1.11.0"
-fp_rust = "0.1.39"
+pretty_env_logger = "0.4"

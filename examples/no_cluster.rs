@@ -2,16 +2,10 @@ use crossbeam_channel::bounded;
 use hyper::Response;
 use hyper::StatusCode;
 use log::LevelFilter;
-use simple_logger::SimpleLogger;
 use vertx_rust::vertx::{NoClusterManager, Vertx, VertxOptions};
 
 fn main() {
-    SimpleLogger::new()
-        .with_module_level("h2", LevelFilter::Info)
-        .with_module_level("hyper", LevelFilter::Info)
-        .with_module_level("tracing", LevelFilter::Info)
-        .init()
-        .unwrap();
+    pretty_env_logger::init_timed();
 
     let mut vertx_options = VertxOptions::default();
     vertx_options

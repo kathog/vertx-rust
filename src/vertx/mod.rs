@@ -22,12 +22,14 @@ use std::{
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::runtime::{Builder, Runtime};
+use signal_hook::iterator::Signals;
+use signal_hook::SIGINT;
 
 static EV_INIT: Once = Once::new();
 
 lazy_static! {
     pub static ref RUNTIME: Runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    pub static ref RUNTIME_EB: Runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+    // pub static ref RUNTIME_EB: Runtime = Builder::new_multi_thread().enable_all().build().unwrap();
     static ref TCPS: Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
     static ref DO_INVOKE: AtomicBool = AtomicBool::new(true);
 }
@@ -152,7 +154,7 @@ impl Default for VertxOptions {
 //Event bus options
 #[derive(Debug, Clone)]
 pub struct EventBusOptions {
-    //Event bus pool size, default number of cpu/2
+    //Event bus pool size, default number of cpu
     event_bus_pool_size: usize,
     //Event bus queue size, default is 2000
     event_bus_queue_size: usize,
@@ -188,7 +190,7 @@ impl From<(String, u16)> for EventBusOptions {
     fn from(opts: (String, u16)) -> Self {
         let cpus = num_cpus::get();
         EventBusOptions {
-            event_bus_pool_size: cpus / 2,
+            event_bus_pool_size: cpus,
             vertx_host: opts.0,
             vertx_port: opts.1,
             event_bus_queue_size: 2000,
@@ -235,6 +237,15 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 
     pub fn start(&self) {
         info!("start vertx version {}", env!("CARGO_PKG_VERSION"));
+        let signals = Signals::new(&[SIGINT]).unwrap();
+        let event_bus = self.event_bus.clone();
+        std::thread::spawn(move || {
+            for sig in signals.forever() {
+                info!("Received signal {:?}", sig);
+                event_bus.stop();
+                break;
+            }
+        });
         self.event_bus.start();
     }
 
@@ -258,7 +269,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
     }
 
     pub fn stop(&self) {
-        DO_INVOKE.store(false, Ordering::SeqCst);
+        self.event_bus.stop();
     }
 }
 
@@ -274,12 +285,14 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     cluster_manager: Arc<Option<CM>>,
     event_bus_port: u16,
     self_arc: Option<Arc<EventBus<CM>>>,
+    runtime: Arc<Runtime>,
 }
 
 impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
         let (sender, _receiver): (Sender<Message>, Receiver<Message>) = unbounded();
         let receiver_joiner = std::thread::spawn(|| {});
+        let pool_size = options.event_bus_pool_size;
         let ev = EventBus {
             options,
             consumers: Arc::new(HashMap::new()),
@@ -290,6 +303,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             cluster_manager: Arc::new(None),
             event_bus_port: 0,
             self_arc: None,
+            runtime: Arc::new(Builder::new_multi_thread()
+                .worker_threads(pool_size)
+                .enable_all()
+                .build()
+                .unwrap())
         };
         return ev;
     }
@@ -307,6 +325,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             let val: JoinHandle<()> = std::ptr::read(&*h);
             val.join().unwrap();
         }
+    }
+
+    fn stop(&self) {
+        DO_INVOKE.store(false, Ordering::SeqCst);
+        self.send("stop", b"stop".to_vec());
     }
 
     fn init(&mut self) {
@@ -343,6 +366,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
         let local_local_consumers = self.local_consumers.clone();
+        let runtime = self.runtime.clone();
 
         let joiner = std::thread::spawn(move || -> () {
             loop {
@@ -359,7 +383,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                         let inner_ev = local_ev.clone();
                         let inner_local_consumers = local_local_consumers.clone();
 
-                        RUNTIME_EB.spawn(async move {
+                        runtime.spawn(async move {
                             let mut mut_msg = msg;
                             match mut_msg.address.clone() {
                                 Some(address) => {

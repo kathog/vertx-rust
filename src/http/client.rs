@@ -1,4 +1,4 @@
-use hyper::{Client, Body, Uri, Response, Error};
+use hyper::{Client, Body, Uri, Response, Error, Request, Method};
 use hyper::client::{HttpConnector, ResponseFuture};
 use tokio::runtime::Runtime;
 
@@ -53,6 +53,13 @@ impl WebClient {
     pub fn blocking_get(&self, url: &'static str) -> Result<Response<Body>, Error>{
         self.runtime.block_on(
             self.client.get(Uri::from_static(url))
+        )
+    }
+
+    #[inline]
+    pub fn blocking_post(&self, request: Request<Body>) -> Result<Response<Body>, Error> {
+        self.runtime.block_on(
+            self.client.request(request)
         )
     }
 

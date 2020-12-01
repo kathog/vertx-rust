@@ -1,7 +1,6 @@
 use crossbeam_channel::bounded;
 use hyper::Response;
 use hyper::StatusCode;
-use log::LevelFilter;
 use vertx_rust::vertx::{NoClusterManager, Vertx, VertxOptions};
 
 fn main() {

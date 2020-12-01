@@ -1,7 +1,7 @@
 #[cfg(feature = "client")]
 pub mod client;
 
-use crate::vertx::{ClusterManager, EventBus};
+use crate::vertx::{cm::ClusterManager, EventBus};
 use hashbrown::HashMap;
 use hyper::http::Error;
 use hyper::server::conn::AddrStream;

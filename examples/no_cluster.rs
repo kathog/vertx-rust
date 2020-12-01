@@ -1,7 +1,7 @@
 use crossbeam_channel::bounded;
 use hyper::Response;
 use hyper::StatusCode;
-use vertx_rust::vertx::{NoClusterManager, Vertx, VertxOptions};
+use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
 
 fn main() {
     pretty_env_logger::init_timed();

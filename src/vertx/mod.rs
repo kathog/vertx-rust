@@ -1,18 +1,16 @@
 pub mod message;
+pub mod cm;
 
 use crate::http::HttpServer;
 use crate::net;
 use crate::net::NetServer;
 use crate::vertx::message::Message;
+use crate::vertx::cm::{ClusterManager, ClusterNodeInfo, ServerID};
 use core::fmt::Debug;
 use crossbeam_channel::*;
 use hashbrown::HashMap;
-use jvm_serializable::java::io::*;
 use log::{debug, error, info, trace, warn};
-use multimap::MultiMap;
 use serde::export::PhantomData;
-use serde::{Deserialize, Serialize};
-use std::collections::hash_map::RandomState;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 use std::{
@@ -29,95 +27,11 @@ static EV_INIT: Once = Once::new();
 
 lazy_static! {
     pub static ref RUNTIME: Runtime = Builder::new_multi_thread().enable_all().build().unwrap();
-    // pub static ref RUNTIME_EB: Runtime = Builder::new_multi_thread().enable_all().build().unwrap();
     static ref TCPS: Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
     static ref DO_INVOKE: AtomicBool = AtomicBool::new(true);
 }
 
-//Struct represented information about vertx node server
-#[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
-pub struct ServerID {
-    pub port: i32,
-    pub host: String,
-}
 
-//Struct represented information about vertx node
-#[jvm_object(io.vertx.core.eventbus.impl.clustered.ClusterNodeInfo,1)]
-pub struct ClusterNodeInfo {
-    pub nodeId: String,
-    pub serverID: ServerID,
-}
-
-//Interface of cluster manager support integrations of cluster nodes
-pub trait ClusterManager: Send {
-    //Register current node as vertx sub
-    fn add_sub(&self, address: String);
-
-    //Register current node as vertx node in cluster
-    fn set_cluster_node_info(&mut self, node: ClusterNodeInfo);
-
-    //Get uniquie node id in cluster
-    fn get_node_id(&self) -> String;
-
-    //Get id list of all nodes in cluster
-    fn get_nodes(&self) -> Vec<String>;
-
-    //Get list of all nodes in cluster
-    fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
-
-    //Get all registered subs and nodes in this subs
-    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
-
-    //Join current node to vertx cluster
-    fn join(&mut self);
-
-    //Leave current cluster from node
-    fn leave(&self);
-
-    //Round rubin index of nodes
-    fn next(&self, len: usize) -> usize;
-}
-
-//Empty implementation of cluster manager to create vertx standalone instance
-pub struct NoClusterManager;
-
-impl ClusterManager for NoClusterManager {
-    fn add_sub(&self, _address: String) {
-        unimplemented!()
-    }
-
-    fn set_cluster_node_info(&mut self, _node: ClusterNodeInfo) {
-        unimplemented!()
-    }
-
-    fn get_node_id(&self) -> String {
-        unimplemented!()
-    }
-
-    fn get_nodes(&self) -> Vec<String> {
-        unimplemented!()
-    }
-
-    fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>> {
-        unimplemented!()
-    }
-
-    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo, RandomState>>> {
-        unimplemented!()
-    }
-
-    fn join(&mut self) {
-        unimplemented!()
-    }
-
-    fn leave(&self) {
-        unimplemented!()
-    }
-
-    fn next(&self, _len: usize) -> usize {
-        unimplemented!()
-    }
-}
 
 //Vertx options
 #[derive(Debug, Clone)]

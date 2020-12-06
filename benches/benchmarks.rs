@@ -6,8 +6,8 @@ use crossbeam_channel::unbounded;
 use vertx_rust::vertx::message::Message;
 extern crate vertx_rust;
 use std::sync::Arc;
+use vertx_rust::vertx::cm::NoClusterManager;
 use vertx_rust::vertx::*;
-use vertx_rust::vertx::cm::{NoClusterManager};
 
 lazy_static! {
     static ref VERTX: Vertx<NoClusterManager> = {

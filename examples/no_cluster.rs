@@ -1,6 +1,7 @@
 use crossbeam_channel::bounded;
 use hyper::Response;
 use hyper::StatusCode;
+use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
 
 fn main() {
@@ -62,6 +63,16 @@ Content-Length: {len}
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
                 .body(body.to_vec().into())
+                .unwrap())
+        })
+        .post("/", move |req, _| {
+            let body = req.into_body();
+            let body = WebClient::blocking_body(body).unwrap();
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(body.into())
                 .unwrap())
         })
         .listen_with_default(9092, move |_, _| {

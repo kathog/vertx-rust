@@ -1,16 +1,18 @@
-pub mod message;
 pub mod cm;
+pub mod message;
 
 use crate::http::HttpServer;
 use crate::net;
 use crate::net::NetServer;
-use crate::vertx::message::Message;
 use crate::vertx::cm::{ClusterManager, ClusterNodeInfo, ServerID};
+use crate::vertx::message::Message;
 use core::fmt::Debug;
 use crossbeam_channel::*;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use serde::export::PhantomData;
+use signal_hook::iterator::Signals;
+use signal_hook::SIGINT;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 use std::{
@@ -20,8 +22,6 @@ use std::{
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 use tokio::runtime::{Builder, Runtime};
-use signal_hook::iterator::Signals;
-use signal_hook::SIGINT;
 
 static EV_INIT: Once = Once::new();
 
@@ -30,8 +30,6 @@ lazy_static! {
     static ref TCPS: Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
     static ref DO_INVOKE: AtomicBool = AtomicBool::new(true);
 }
-
-
 
 //Vertx options
 #[derive(Debug, Clone)]
@@ -155,7 +153,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
         let event_bus = self.event_bus.clone();
         std::thread::spawn(move || {
             for sig in signals.forever() {
-                info!("Received signal {:?}", sig);
+                info!("received signal {:?}", sig);
                 event_bus.stop();
                 break;
             }
@@ -217,11 +215,13 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             cluster_manager: Arc::new(None),
             event_bus_port: 0,
             self_arc: None,
-            runtime: Arc::new(Builder::new_multi_thread()
-                .worker_threads(pool_size)
-                .enable_all()
-                .build()
-                .unwrap())
+            runtime: Arc::new(
+                Builder::new_multi_thread()
+                    .worker_threads(pool_size)
+                    .enable_all()
+                    .build()
+                    .unwrap(),
+            ),
         };
         return ev;
     }
@@ -242,7 +242,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     fn stop(&self) {
-        DO_INVOKE.store(false, Ordering::SeqCst);
+        info!("stopping event_bus");
+        DO_INVOKE.store(false, Ordering::Relaxed);
         self.send("stop", b"stop".to_vec());
     }
 
@@ -284,7 +285,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
         let joiner = std::thread::spawn(move || -> () {
             loop {
-                if !DO_INVOKE.load(Ordering::SeqCst) {
+                if !DO_INVOKE.load(Ordering::Relaxed) {
                     return;
                 }
                 match receiver.recv() {

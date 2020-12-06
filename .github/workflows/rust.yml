@@ -19,4 +19,4 @@ jobs:
     - name: Install nightly
       run: rustup install nightly
     - name: Build
-      run: cargo +nightly build
+      run: cargo +nightly build --features zk,client

@@ -1,3 +1,4 @@
+use crate::vertx::cm::ClusterNodeInfo;
 use crate::vertx::{cm::ClusterManager, RUNTIME};
 use hashbrown::HashMap;
 use jvm_serializable::java::io::*;
@@ -13,7 +14,6 @@ use uuid::Uuid;
 use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
 use zookeeper::CreateMode;
 use zookeeper::{Acl, ZooKeeper};
-use crate::vertx::cm::ClusterNodeInfo;
 
 static ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH: &str = "/cluster/nodes";
 static ZK_PATH_HA_INFO: &str = "/syncMap/__vertx.haInfo";

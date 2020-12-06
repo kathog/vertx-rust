@@ -4,6 +4,4 @@ extern crate lazy_static;
 extern crate log;
 
 #[cfg(test)]
-mod tests {
-
-}
+mod tests {}

@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
-use multimap::MultiMap;
-use std::collections::hash_map::RandomState;
 use jvm_serializable::java::io::*;
+use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::RandomState;
+use std::sync::{Arc, Mutex};
 
 //Struct represented information about vertx node server
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]

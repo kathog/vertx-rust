@@ -8,7 +8,7 @@ mod test {
     use crate::http::client::WebClient;
     extern crate pretty_env_logger;
     use hyper::{Body, Request};
-    use log::{info, warn};
+    use log::info;
     use tokio::runtime::Runtime;
 
     #[test]
@@ -25,14 +25,15 @@ mod test {
         pretty_env_logger::init_timed();
 
         let client = WebClient::new();
-
         let body = Body::from("test_blocking_request");
         let request = Request::post("http://127.0.0.1:9092").body(body).unwrap();
 
         let response = client.blocking_request(request);
-        info!(
-            "{:?}",
-            WebClient::blocking_body(response.unwrap().into_body())
+        let _ = response.map(|r| WebClient::blocking_body(r.into_body())
+            .map(|b| {
+                info!("{:?}", std::str::from_utf8(&*b));
+                b
+            })
         );
     }
 

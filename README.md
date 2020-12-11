@@ -18,7 +18,8 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 4. Nonblocking eventbus publish
 5. Nonblocking multi-threaded tcp server - based on [tokio](https://github.com/tokio-rs/tokio)
 6. Nonblocking multi-threaded http server - based on [hyper](https://github.com/hyperium/hyper)
-6. Zookeeper cluster manager
+7. Blocking and nonblocking simple [hyper](https://github.com/hyperium/hyper) http client wrapper 
+8. Zookeeper cluster manager
 
 # Benchmarks
 

@@ -36,8 +36,7 @@ hashbrown = "0.9.1"
 lazy_static = "1.4.0"
 waiter_di = "1.6.2"
 hypospray = "0.1.2"
-tokio-net = "0.2.0-alpha.6"
-tokio = {version ="0.3", features = ["full"] }
+tokio = {version ="1", features = ["full"] }
 hex = "0.4.2"
 bytes = "0.6"
 multimap = "0.8.2"
@@ -45,8 +44,7 @@ jvm-serializable = {version = "0.0.2"}
 jvm-macro = {version = "0.0.1"}
 log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 crossbeam-channel = "0.5.0"
-hyper = {git = "https://github.com/hyperium/hyper", features = ["full"] }
-#hyper = "0.13.9"
+hyper = {version = "0.14.1", features = ["full"] }
 signal-hook = "0.2.1"
 
 [dev-dependencies]

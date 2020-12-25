@@ -1,10 +1,9 @@
 use crate::vertx::{cm::ClusterManager, message::Message, EventBus, RUNTIME};
-use bytes::BytesMut;
 use crossbeam_channel::Sender;
 use log::{error, info};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::prelude::*;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub struct NetServer<CM: 'static + ClusterManager + Send + Sync> {
     pub port: u16,
@@ -49,7 +48,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
                             return;
                         }
                     };
-                    let mut buf = BytesMut::with_capacity(len as usize);
+                    let mut buf = Vec::with_capacity(len as usize);
                     let _n = match socket.read_buf(&mut buf).await {
                         Ok(n) if n == 0 => return,
                         Ok(n) => &buf[0..n],

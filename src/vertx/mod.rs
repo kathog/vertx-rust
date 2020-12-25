@@ -20,8 +20,8 @@ use std::{
     thread::JoinHandle,
 };
 use tokio::net::TcpStream;
-use tokio::prelude::*;
 use tokio::runtime::{Builder, Runtime};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 static EV_INIT: Once = Once::new();
 

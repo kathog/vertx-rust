@@ -7,7 +7,7 @@ fn main() {
 
     let vertx_options = VertxOptions::default();
     let mut vertx = Vertx::new(vertx_options);
-    let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx.01".to_string());
+    let zk = ZookeeperClusterManager::new("127.0.0.1:2181".to_string(), "io.vertx".to_string());
     vertx.set_cluster_manager(zk);
     let event_bus = vertx.event_bus();
 

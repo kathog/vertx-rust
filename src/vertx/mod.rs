@@ -321,10 +321,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                         Some(cm) => {
                                             debug!(
                                                 "manager: {:?}",
-                                                cm.get_subs().lock().unwrap().len()
+                                                cm.get_subs().read().unwrap().len()
                                             );
                                             let subs = cm.get_subs();
-                                            let nodes = subs.lock().unwrap();
+                                            let nodes = subs.read().unwrap();
                                             let nodes_lock = nodes.get_vec(&address.clone());
 
                                             match nodes_lock {

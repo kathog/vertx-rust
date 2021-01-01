@@ -35,7 +35,7 @@ pub struct ZookeeperClusterManager {
     node_id: String,
     nodes: Arc<Mutex<Vec<String>>>,
     ha_infos: Arc<Mutex<Vec<ClusterNodeInfo>>>,
-    subs: Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>,
+    subs: Arc<RwLock<MultiMap<String, ClusterNodeInfo>>>,
     zookeeper: Arc<ZooKeeper>,
     cluster_node: ClusterNodeInfo,
     tcp_conns: Arc<HashMap<String, Arc<TcpStream>>>,
@@ -47,9 +47,22 @@ impl ZookeeperClusterManager {
     pub fn new(zk_hosts: String, zk_root: String) -> ZookeeperClusterManager {
         let zookeeper =
             ZooKeeper::connect(&format!("{}", zk_hosts), Duration::from_secs(1), |_| {}).unwrap();
-        let exist_root = zookeeper.exists(&zk_root, false);
+        let exist_root = zookeeper.exists(&format!("/{}", &zk_root), false);
         match exist_root {
-            Ok(_) => return ZookeeperClusterManager::construct(zk_hosts, zk_root),
+            Ok(resp) => {
+                match resp {
+                    Some(_) => {},
+                    None => {
+                        let _ = zookeeper.create(
+                            &format!("/{}", &zk_root),
+                            vec![],
+                            Acl::open_unsafe().clone(),
+                            CreateMode::Persistent,
+                        ).unwrap();
+                    }
+                }
+                return ZookeeperClusterManager::construct(zk_hosts, zk_root)
+            },
             Err(_) => {
                 let _ = zookeeper.create(
                     &zk_root,
@@ -73,7 +86,7 @@ impl ZookeeperClusterManager {
             nodes: Arc::new(Mutex::new(Vec::new())),
             node_id: Uuid::new_v4().to_string(),
             ha_infos: Arc::new(Mutex::new(Vec::new())),
-            subs: Arc::new(Mutex::new(MultiMap::new())),
+            subs: Arc::new(RwLock::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
             cluster_node: Default::default(),
             tcp_conns: Arc::new(HashMap::new()),
@@ -88,7 +101,7 @@ impl From<ZooKeeper> for ZookeeperClusterManager {
             nodes: Arc::new(Mutex::new(Vec::new())),
             node_id: Uuid::new_v4().to_string(),
             ha_infos: Arc::new(Mutex::new(Vec::new())),
-            subs: Arc::new(Mutex::new(MultiMap::new())),
+            subs: Arc::new(RwLock::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
             cluster_node: Default::default(),
             tcp_conns: Arc::new(HashMap::new()),
@@ -215,7 +228,7 @@ impl ClusterManager for ZookeeperClusterManager {
     }
 
     #[inline]
-    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>> {
+    fn get_subs(&self) -> Arc<RwLock<MultiMap<String, ClusterNodeInfo>>> {
         self.subs.clone()
     }
 
@@ -241,9 +254,19 @@ impl ClusterManager for ZookeeperClusterManager {
 
 impl ZookeeperClusterManager {
     fn watch_nodes(&mut self) {
-        let mut nodes_cache =
-            PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH)
-                .unwrap();
+        let mut nodes_cache = match PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH) {
+            Ok(cache) => cache,
+            Err(_) => {
+                let _ = self.zookeeper.create(
+                    ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH,
+                    vec![],
+                    Acl::open_unsafe().clone(),
+                    CreateMode::Persistent,
+                ).unwrap();
+
+                PathChildrenCache::new(self.zookeeper.clone(), ZK_PATH_CLUSTER_NODE_WITHOUT_SLASH).unwrap()
+            }
+        };
         match nodes_cache.start() {
             Err(err) => {
                 error!("error starting cache: {:?}", err);
@@ -322,14 +345,13 @@ impl ZookeeperClusterManager {
         let subs: Arc<Mutex<Vec<Mutex<PathChildrenCache>>>> = Arc::new(Mutex::new(Vec::new()));
         let clone_subs = subs.clone();
 
-        let clone_tcp_conns = self.tcp_conns.clone();
-
         let (sender, receiver): (
             std::sync::mpsc::Sender<String>,
             std::sync::mpsc::Receiver<String>,
         ) = std::sync::mpsc::channel();
         let zk_clone = self.zookeeper.clone();
         let subs_clone = self.subs.clone();
+        let zk_node_id = self.node_id.clone();
         std::thread::spawn(move || loop {
             match receiver.recv() {
                 Ok(recv) => {
@@ -338,10 +360,9 @@ impl ZookeeperClusterManager {
                     inner_subs.lock().unwrap().start().unwrap();
 
                     let inner_subs_clone = subs_clone.clone();
-                    let inner_tcp_conns = clone_tcp_conns.clone();
+                    let zk_node_id = zk_node_id.clone();
 
                     inner_subs.lock().unwrap().add_listener(move |ev| {
-                        let mut inner_tcp_conns0 = inner_tcp_conns.clone();
                         match ev {
                             PathChildrenCacheEvent::ChildAdded(_, data) => {
                                 let msg_addr = recv.replace("/asyncMultiMap/__vertx.subs/", "");
@@ -349,34 +370,22 @@ impl ZookeeperClusterManager {
                                 let mut deser = ObjectInputStream {};
                                 let node: ClusterNodeInfo = deser.read_object(data_as_byte.clone());
                                 debug!("{:?}", node);
-                                let mut i_subs = inner_subs_clone.lock().unwrap();
+                                let mut i_subs = inner_subs_clone.write().unwrap();
                                 let node_id = node.nodeId.clone();
-                                let host = node.serverID.host.clone();
-                                let port = node.serverID.port;
-                                i_subs.insert(msg_addr, node);
-
-                                let tcp = RUNTIME
-                                    .block_on(TcpStream::connect(format!("{}:{}", host, port)));
-                                match tcp {
-                                    Ok(tcp) => {
-                                        let tcp_conn = Arc::new(tcp);
-                                        unsafe {
-                                            Arc::get_mut_unchecked(&mut inner_tcp_conns0)
-                                                .insert(node_id, tcp_conn);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!("cannot connect to server: {:?}", e);
-                                    }
+                                i_subs.insert(msg_addr.clone(), node);
+                                if node_id == zk_node_id {
+                                    let node: ClusterNodeInfo = deser.read_object(data_as_byte.clone());
+                                    i_subs.insert(msg_addr, node);
                                 }
                             }
                             PathChildrenCacheEvent::ChildRemoved(id) => {
                                 let id = id.replace("/asyncMultiMap/__vertx.subs/", "");
+                                debug!("remove {:?}", id);
                                 let mut split_id = id.split("/");
                                 let msg_addr = split_id.next().unwrap();
                                 let node_info = split_id.next().unwrap();
                                 let node_info = node_info.split(":").next().unwrap();
-                                let mut i_subs = inner_subs_clone.lock().unwrap();
+                                let mut i_subs = inner_subs_clone.write().unwrap();
                                 let subs = i_subs.get_vec_mut(msg_addr).unwrap();
                                 for (idx, node) in subs.iter().enumerate() {
                                     if node.nodeId == node_info {

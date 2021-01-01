@@ -2,7 +2,7 @@ use jvm_serializable::java::io::*;
 use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::RandomState;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 //Struct represented information about vertx node server
 #[jvm_object(io.vertx.core.net.impl.ServerID,5636540499169644934)]
@@ -36,7 +36,7 @@ pub trait ClusterManager: Send {
     fn get_ha_infos(&self) -> Arc<Mutex<Vec<ClusterNodeInfo>>>;
 
     //Get all registered subs and nodes in this subs
-    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo>>>;
+    fn get_subs(&self) -> Arc<RwLock<MultiMap<String, ClusterNodeInfo>>>;
 
     //Join current node to vertx cluster
     fn join(&mut self);
@@ -72,7 +72,7 @@ impl ClusterManager for NoClusterManager {
         unimplemented!()
     }
 
-    fn get_subs(&self) -> Arc<Mutex<MultiMap<String, ClusterNodeInfo, RandomState>>> {
+    fn get_subs(&self) -> Arc<RwLock<MultiMap<String, ClusterNodeInfo, RandomState>>> {
         unimplemented!()
     }
 

@@ -1,14 +1,12 @@
 use crate::vertx::cm::ClusterNodeInfo;
-use crate::vertx::{cm::ClusterManager, RUNTIME};
-use hashbrown::HashMap;
+use crate::vertx::{cm::ClusterManager};
 use jvm_serializable::java::io::*;
 use log::info;
-use log::{debug, error, warn};
+use log::{debug, error};
 use multimap::MultiMap;
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
-use tokio::net::TcpStream;
 use tokio::time::Duration;
 use uuid::Uuid;
 use zookeeper::recipes::cache::{PathChildrenCache, PathChildrenCacheEvent};
@@ -38,7 +36,6 @@ pub struct ZookeeperClusterManager {
     subs: Arc<RwLock<MultiMap<String, ClusterNodeInfo>>>,
     zookeeper: Arc<ZooKeeper>,
     cluster_node: ClusterNodeInfo,
-    tcp_conns: Arc<HashMap<String, Arc<TcpStream>>>,
     cur_idx: Arc<RwLock<usize>>,
 }
 
@@ -89,7 +86,6 @@ impl ZookeeperClusterManager {
             subs: Arc::new(RwLock::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
             cluster_node: Default::default(),
-            tcp_conns: Arc::new(HashMap::new()),
             cur_idx: Arc::new(RwLock::new(0)),
         }
     }
@@ -104,7 +100,6 @@ impl From<ZooKeeper> for ZookeeperClusterManager {
             subs: Arc::new(RwLock::new(MultiMap::new())),
             zookeeper: Arc::new(zookeeper),
             cluster_node: Default::default(),
-            tcp_conns: Arc::new(HashMap::new()),
             cur_idx: Arc::new(RwLock::new(0)),
         }
     }

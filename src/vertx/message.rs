@@ -71,7 +71,7 @@ impl From<Vec<u8>> for Message {
         idx += 4;
         let mut replay = None;
         if len_replay > 0 {
-            let replay_str = String::from_utf8(msg[idx..idx + len_addr].to_vec()).unwrap();
+            let replay_str = String::from_utf8(msg[idx..idx + len_replay].to_vec()).unwrap();
             idx += len_replay;
             replay = Some(replay_str);
         }

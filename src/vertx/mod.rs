@@ -321,10 +321,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                         Some(cm) => {
                                             debug!(
                                                 "manager: {:?}",
-                                                cm.get_subs().lock().unwrap().len()
+                                                cm.get_subs().read().unwrap().len()
                                             );
                                             let subs = cm.get_subs();
-                                            let nodes = subs.lock().unwrap();
+                                            let nodes = subs.read().unwrap();
                                             let nodes_lock = nodes.get_vec(&address.clone());
 
                                             match nodes_lock {
@@ -354,7 +354,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                                 inner_ev.clone().unwrap(),
                                                             ));
                                                         }
-                                                        None => {}
+                                                        None => {
+                                                            let host = mut_msg.host.clone();
+                                                            let port = mut_msg.port.clone();
+                                                            <EventBus<CM>>::send_reply(mut_msg, host, port);
+                                                        }
                                                     }
                                                 }
                                             }
@@ -581,6 +585,46 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 warn!("Error in send message: {:?}", err);
             }
         }
+    }
+
+    #[inline]
+    fn send_reply(mut_msg: Message, host: String, port: i32) {
+        RUNTIME.spawn(async move {
+
+            let tcp_stream = TCPS.get(&format!("{}_{}", host.clone(), port));
+            match tcp_stream {
+                Some(stream) => unsafe {
+                    let mut stream = stream.clone();
+                    let stream = Arc::get_mut_unchecked(&mut stream);
+                    match stream.write_all(&mut_msg.to_vec().unwrap()).await {
+                        Ok(_) => {},
+                        Err(e) => {
+                            warn!("Error in send message: {:?}", e);
+                        }
+                    }
+                },
+                None => {
+                    match TcpStream::connect(format!("{}:{}", host, port)).await {
+                        Ok(mut stream) => match stream.write_all(&mut_msg.to_vec().unwrap()).await {
+                            Ok(_r) => {
+                                let mut tcps = TCPS.clone();
+                                unsafe {
+                                    let tcps = Arc::get_mut_unchecked(&mut tcps);
+                                    tcps.insert(format!("{}_{}", host.clone(), port), Arc::new(stream));
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Error in send message: {:?}", e);
+                            }
+                        },
+                        Err(err) => {
+                            warn!("Error in send message: {:?}", err);
+                        }
+                    }
+                }
+            }
+        });
+
     }
 
     #[inline]

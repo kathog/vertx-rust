@@ -97,7 +97,7 @@ impl WebClient {
 
     #[inline]
     pub fn request(&self, request: Request<Body>) -> ResponseFuture {
-        if url.starts_with("https") {
+        if request.uri().scheme_str() == Some("https") {
             self.tls_client.request(request)
         } else {
             self.client.request(request)
@@ -106,10 +106,11 @@ impl WebClient {
 
     #[inline]
     pub fn get(&self, url: &'static str) -> ResponseFuture {
-        if url.starts_with("https") {
-            self.tls_client.get(Uri::from_static(url))
+        let uri = Uri::from_static(url);
+        if uri.scheme_str() == Some("https") {
+            self.tls_client.get(uri)
         } else {
-            self.client.get(Uri::from_static(url))
+            self.client.get(uri)
         }
     }
 }

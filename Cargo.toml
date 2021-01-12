@@ -39,7 +39,7 @@ tokio = {version ="1", features = ["full"] }
 hex = "0.4.2"
 bytes = "0.6"
 multimap = "0.8.2"
-jvm-serializable = {version = "0.0.2"}
+jvm-serializable = {version = "0.0.3"}
 jvm-macro = {version = "0.0.1"}
 log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
 crossbeam-channel = "0.5.0"

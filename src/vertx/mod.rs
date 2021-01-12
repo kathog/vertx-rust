@@ -10,7 +10,6 @@ use core::fmt::Debug;
 use crossbeam_channel::*;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
-use serde::export::PhantomData;
 use signal_hook::iterator::Signals;
 use signal_hook::SIGINT;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +21,7 @@ use std::{
 use tokio::net::TcpStream;
 use tokio::runtime::{Builder, Runtime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::marker::PhantomData;
 
 static EV_INIT: Once = Once::new();
 

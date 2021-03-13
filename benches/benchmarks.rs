@@ -3,7 +3,7 @@ extern crate test;
 #[macro_use]
 extern crate lazy_static;
 use crossbeam_channel::unbounded;
-use vertx_rust::vertx::message::Message;
+use vertx_rust::vertx::message::{Message, Body};
 extern crate vertx_rust;
 use std::sync::Arc;
 use vertx_rust::vertx::cm::NoClusterManager;
@@ -21,17 +21,23 @@ lazy_static! {
 #[bench]
 fn vertx_request(b: &mut test::Bencher) {
     EB.local_consumer("test.01", move |m, _| {
-        let body = m.body();
+        let b = m.body();
+        let body = match b.as_ref() {
+            Body::String(s) => {
+                s
+            }
+            _ => panic!()
+        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = std::str::from_utf8(&body.to_vec()).unwrap()
+            code = body
         );
-        m.reply(response.into_bytes());
+        m.reply(Body::String(response));
     });
 
     b.iter(|| {
         let (tx, rx) = unbounded();
-        EB.request("test.01", b"UP".to_vec(), move |m, _| {
+        EB.request("test.01", Body::String("UP".to_string()), move |m, _| {
             let _body = m.body();
             let _ = tx.send(1);
         });
@@ -42,32 +48,45 @@ fn vertx_request(b: &mut test::Bencher) {
 #[bench]
 fn vertx_send(b: &mut test::Bencher) {
     EB.local_consumer("test.01", move |m, _| {
-        let body = m.body();
+        let b = m.body();
+        let body = match b.as_ref() {
+            Body::String(s) => {
+                s
+            }
+            _ => panic!()
+        };
+
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = std::str::from_utf8(&body.to_vec()).unwrap()
+            code = body
         );
-        m.reply(response.into_bytes());
+        m.reply(Body::String(response));
     });
 
     b.iter(|| {
-        EB.send("test.01", b"UP".to_vec());
+        EB.send("test.01", Body::String("UP".to_string()));
     });
 }
 
 #[bench]
 fn vertx_publish(b: &mut test::Bencher) {
     EB.local_consumer("test.01", move |m, _| {
-        let body = m.body();
+        let b = m.body();
+        let body = match b.as_ref() {
+            Body::String(s) => {
+                s
+            }
+            _ => panic!()
+        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = std::str::from_utf8(&body.to_vec()).unwrap()
+            code = body
         );
-        m.reply(response.into_bytes());
+        m.reply(Body::String(response));
     });
 
     b.iter(|| {
-        EB.publish("test.01", b"UP".to_vec());
+        EB.publish("test.01", Body::String("UP".to_string()));
     });
 }
 

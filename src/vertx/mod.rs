@@ -5,7 +5,7 @@ use crate::http::HttpServer;
 use crate::net;
 use crate::net::NetServer;
 use crate::vertx::cm::{ClusterManager, ClusterNodeInfo, ServerID};
-use crate::vertx::message::Message;
+use crate::vertx::message::{Message, Body};
 use core::fmt::Debug;
 use crossbeam_channel::*;
 use hashbrown::HashMap;
@@ -244,7 +244,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     fn stop(&self) {
         info!("stopping event_bus");
         DO_INVOKE.store(false, Ordering::Relaxed);
-        self.send("stop", b"stop".to_vec());
+        self.send("stop", Body::String("stop".to_string()));
     }
 
     fn init(&mut self) {
@@ -685,7 +685,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub fn send(&self, address: &str, request: Vec<u8>) {
+    pub fn send(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
             address: Some(addr.clone()),
@@ -698,7 +698,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub fn publish(&self, address: &str, request: Vec<u8>) {
+    pub fn publish(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
             address: Some(addr.clone()),
@@ -712,7 +712,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub fn request<OP>(&self, address: &str, request: Vec<u8>, op: OP)
+    pub fn request<OP>(&self, address: &str, request: Body, op: OP)
     where
         OP: Fn(&Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
     {

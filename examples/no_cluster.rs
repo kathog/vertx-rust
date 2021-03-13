@@ -3,6 +3,7 @@ use hyper::Response;
 use hyper::StatusCode;
 use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
+use vertx_rust::vertx::message::Body;
 
 fn main() {
     pretty_env_logger::init_timed();
@@ -16,12 +17,18 @@ fn main() {
     let event_bus = vertx.event_bus();
 
     event_bus.consumer("test.01", move |m, _| {
-        let body = m.body();
+        let b = m.body();
+        let body = match b.as_ref() {
+            Body::String(s) => {
+                s
+            }
+            _ => panic!()
+        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = std::str::from_utf8(&body.to_vec()).unwrap()
+            code = body
         );
-        m.reply(response.into_bytes());
+        m.reply(Body::String(response));
     });
     let net_server = vertx.create_net_server();
     net_server.listen(9091, move |_req, ev| {
@@ -29,13 +36,18 @@ fn main() {
         let (tx, rx) = bounded(1);
         ev.request(
             "test.01",
-            uuid::Uuid::new_v4().to_string().into_bytes(),
+            Body::String(uuid::Uuid::new_v4().to_string()),
             move |m, _| {
                 let _ = tx.send(m.body());
             },
         );
         let body = rx.recv().unwrap();
-        let body = std::str::from_utf8(&body).unwrap();
+        let body = match body.as_ref() {
+            Body::String(s) => {
+                s
+            }
+            _ => panic!()
+        };
         let data = format!(
             r#"
 HTTP/1.1 200 OK
@@ -55,14 +67,20 @@ Content-Length: {len}
     http_server
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);
-            ev.request("test.01", b"UP".to_vec(), move |m, _| {
+            ev.request("test.01", Body::String("UP".to_string()), move |m, _| {
                 let _ = tx.send(m.body());
             });
             let body = rx.recv().unwrap();
+            let body = match body.as_ref() {
+                Body::String(s) => {
+                    s
+                }
+                _ => panic!()
+            };
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(body.to_vec().into())
+                .body(body.clone().into())
                 .unwrap())
         })
         .post("/", move |req, _| {

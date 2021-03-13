@@ -59,8 +59,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
                         }
                     };
                     let bytes_as_vec = buf.to_vec();
-                    let bytes_as_string = String::from_utf8_lossy(&bytes_as_vec);
-                    if bytes_as_string.contains("ping") {
+                    if bytes_as_vec[1] == 1 {
                         if let Err(e) = socket.write_all(b"pong").await {
                             error!("failed to write to socket; err = {:?}", e);
                             return;

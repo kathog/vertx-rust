@@ -5,13 +5,12 @@ use crate::http::HttpServer;
 use crate::net;
 use crate::net::NetServer;
 use crate::vertx::cm::{ClusterManager, ClusterNodeInfo, ServerID};
-use crate::vertx::message::Message;
+use crate::vertx::message::{Message, Body};
 use core::fmt::Debug;
 use crossbeam_channel::*;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use signal_hook::iterator::Signals;
-use signal_hook::SIGINT;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 use std::{
@@ -149,7 +148,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 
     pub fn start(&self) {
         info!("start vertx version {}", env!("CARGO_PKG_VERSION"));
-        let signals = Signals::new(&[SIGINT]).unwrap();
+        let mut signals = Signals::new(&[2]).unwrap();
         let event_bus = self.event_bus.clone();
         std::thread::spawn(move || {
             for sig in signals.forever() {
@@ -244,7 +243,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     fn stop(&self) {
         info!("stopping event_bus");
         DO_INVOKE.store(false, Ordering::Relaxed);
-        self.send("stop", b"stop".to_vec());
+        self.send("stop", Body::String("stop".to_string()));
     }
 
     fn init(&mut self) {
@@ -685,7 +684,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub fn send(&self, address: &str, request: Vec<u8>) {
+    pub fn send(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
             address: Some(addr.clone()),
@@ -698,7 +697,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub fn publish(&self, address: &str, request: Vec<u8>) {
+    pub fn publish(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
             address: Some(addr.clone()),
@@ -712,7 +711,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub fn request<OP>(&self, address: &str, request: Vec<u8>, op: OP)
+    pub fn request<OP>(&self, address: &str, request: Body, op: OP)
     where
         OP: Fn(&Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
     {

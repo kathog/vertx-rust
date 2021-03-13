@@ -2,6 +2,8 @@
 #![feature(fn_traits)]
 #![feature(plugin)]
 #![feature(type_name_of_val)]
+#![feature(array_methods)]
+#![feature(assoc_char_funcs)]
 #[cfg(feature = "tc")]
 extern crate tcmalloc;
 #[cfg(feature = "tc")]

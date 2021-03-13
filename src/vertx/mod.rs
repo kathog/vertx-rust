@@ -11,7 +11,6 @@ use crossbeam_channel::*;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use signal_hook::iterator::Signals;
-use signal_hook::SIGINT;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 use std::{
@@ -149,7 +148,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 
     pub fn start(&self) {
         info!("start vertx version {}", env!("CARGO_PKG_VERSION"));
-        let signals = Signals::new(&[SIGINT]).unwrap();
+        let mut signals = Signals::new(&[2]).unwrap();
         let event_bus = self.event_bus.clone();
         std::thread::spawn(move || {
             for sig in signals.forever() {

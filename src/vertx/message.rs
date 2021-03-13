@@ -28,6 +28,8 @@ pub struct Message {
 #[derive(Clone, Debug)]
 pub enum Body {
 
+    Byte(u8),
+    Short(i16),
     Int(i32),
     Long(i64),
     Float(f32),
@@ -35,7 +37,9 @@ pub enum Body {
     String(String),
     ByteArray(Vec<u8>),
     Boolean(bool),
-    Null
+    Char(char),
+    Null,
+    Ping
 
 }
 
@@ -105,9 +109,18 @@ impl From<Vec<u8>> for Message {
         match system_codec_id {
             0 => {
                 body = Body::Null
+            },
+            1 => {
+                body = Body::Ping
+            }
+            2 => {
+                body = Body::Byte(u8::from_be_bytes(msg[idx..idx + 1].try_into().unwrap()))
             }
             3 => {
                 body = Body::Boolean(i8::from_be_bytes(msg[idx..idx + 1].try_into().unwrap()) == 1)
+            },
+            4 => {
+                body = Body::Short(i16::from_be_bytes(msg[idx..idx + 2].try_into().unwrap()))
             }
             5 => {
                 body = Body::Int(i32::from_be_bytes(msg[idx..idx + 4].try_into().unwrap()))
@@ -127,6 +140,9 @@ impl From<Vec<u8>> for Message {
                 let body_array = msg[idx..idx + len_body].to_vec();
                 body = Body::String(String::from_utf8(body_array).unwrap())
             },
+            10 => {
+                body = Body::Char(char::from_u32(i16::from_be_bytes(msg[idx..idx + 2].try_into().unwrap()) as u32).unwrap())
+            }
             12 => {
                 let len_body = i32::from_be_bytes(msg[idx..idx + 4].try_into().unwrap()) as usize;
                 idx += 4;
@@ -192,9 +208,25 @@ impl Message {
                     b0.extend_from_slice((0 as i8).to_be_bytes().as_slice())
                 }
             }
-            Body::Null => {}
+            Body::Null => {
+                data.push(0);
+            }
+            Body::Byte(b) => {
+                data.push(2);
+                b0.push(*b);
+            }
+            Body::Short(b) => {
+                data.push(4);
+                b0.extend_from_slice(b.to_be_bytes().as_slice());
+            }
+            Body::Char(b) => {
+                data.push(10);
+                b0.extend_from_slice((((*b) as u32) as i16).to_be_bytes().as_slice());
+            }
+            Body::Ping => {
+                data.push(1);
+            }
         };
-
 
         data.push(0);
         let address = self.address.clone().expect("Replay message not found!");

@@ -19,9 +19,9 @@ fn main() {
     event_bus.consumer("test.01", move |m, _| {
         let b = m.body();
         let body = match b.as_ref() {
-            Body::String(s) => {
+            Body::Int(s) => {
                 s
-            }
+            },
             _ => panic!()
         };
         let response = format!(
@@ -36,7 +36,7 @@ fn main() {
         let (tx, rx) = bounded(1);
         ev.request(
             "test.01",
-            Body::String(uuid::Uuid::new_v4().to_string()),
+            Body::Int(101),
             move |m, _| {
                 let _ = tx.send(m.body());
             },
@@ -67,12 +67,12 @@ Content-Length: {len}
     http_server
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);
-            ev.request("test.01", Body::String("UP".to_string()), move |m, _| {
+            ev.request("test.01", Body::Int(102), move |m, _| {
                 let _ = tx.send(m.body());
             });
             let body = rx.recv().unwrap();
             let body = match body.as_ref() {
-                Body::String(s) => {
+                Body::Int(s) => {
                     s
                 }
                 _ => panic!()
@@ -80,7 +80,7 @@ Content-Length: {len}
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(body.clone().into())
+                .body(body.to_string().into())
                 .unwrap())
         })
         .post("/", move |req, _| {

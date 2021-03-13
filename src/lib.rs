@@ -11,10 +11,8 @@ use tcmalloc::TCMalloc;
 pub static ALLOCATOR: TCMalloc = TCMalloc;
 
 #[cfg(not(feature = "tc"))]
-use std::alloc::System;
-#[cfg(not(feature = "tc"))]
 #[global_allocator]
-pub static ALLOCATOR: System = System;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[allow(non_upper_case_globals)]
 extern crate hypospray;

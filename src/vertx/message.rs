@@ -82,7 +82,7 @@ impl Message {
 impl From<Vec<u8>> for Message {
     #[inline]
     fn from(msg: Vec<u8>) -> Self {
-        let mut idx = 1; //Ignore first 3 bytes
+        let mut idx = 1;
         let system_codec_id = i8::from_be_bytes(msg[idx..idx + 1].try_into().unwrap()) as i32;
         idx += 2;
         let len_addr = i32::from_be_bytes(msg[idx..idx + 4].try_into().unwrap()) as usize;

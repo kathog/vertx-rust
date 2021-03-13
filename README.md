@@ -106,7 +106,7 @@ let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
 let event_bus = vertx.event_bus();
 
-event_bus.send("test.01", "Hello World".as_bytes().to_vec());
+event_bus.send("test.01", Body::String("Hello World".to_string()));
 ```
 
 ### Eventbus request
@@ -118,7 +118,7 @@ let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
 let event_bus = vertx.event_bus();
 
-event_bus.request("test.01", "Hello World".as_bytes().to_vec(), move |m, _| {
+event_bus.request("test.01", Body::String("Hello World".to_string()), move |m, _| {
   ...
 });
 ```

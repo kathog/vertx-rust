@@ -22,15 +22,9 @@ lazy_static! {
 fn vertx_request(b: &mut test::Bencher) {
     EB.local_consumer("test.01", move |m, _| {
         let b = m.body();
-        let body = match b.as_ref() {
-            Body::String(s) => {
-                s
-            }
-            _ => panic!()
-        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = body
+            code = b.as_string().unwrap()
         );
         m.reply(Body::String(response));
     });
@@ -49,16 +43,9 @@ fn vertx_request(b: &mut test::Bencher) {
 fn vertx_send(b: &mut test::Bencher) {
     EB.local_consumer("test.01", move |m, _| {
         let b = m.body();
-        let body = match b.as_ref() {
-            Body::String(s) => {
-                s
-            }
-            _ => panic!()
-        };
-
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = body
+            code = b.as_string().unwrap()
         );
         m.reply(Body::String(response));
     });
@@ -72,15 +59,9 @@ fn vertx_send(b: &mut test::Bencher) {
 fn vertx_publish(b: &mut test::Bencher) {
     EB.local_consumer("test.01", move |m, _| {
         let b = m.body();
-        let body = match b.as_ref() {
-            Body::String(s) => {
-                s
-            }
-            _ => panic!()
-        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = body
+            code = b.as_string().unwrap()
         );
         m.reply(Body::String(response));
     });

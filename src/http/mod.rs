@@ -148,7 +148,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
         return self;
     }
 
-    pub fn listen_with_default<OP>(&mut self, port: u16, default: OP)
+    pub fn listen_with_default<OP>(&mut self, port: u16, mut default: OP)
     where
         OP: FnMut(Request<Body>, Arc<EventBus<CM>>) -> Result<Response<Body>, Error>
             + 'static
@@ -157,8 +157,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
             + Copy,
     {
         let ev = self.event_bus.as_ref().unwrap().clone();
-
-        let mut default = default;
 
         let callers = self.callers.clone();
         let addr = SocketAddr::from(([0, 0, 0, 0], port));

@@ -22,7 +22,7 @@ fn main() {
             r#"{{"health": "{code}"}}"#,
             code = b.as_i32().unwrap()
         );
-        m.reply(Body::String(response));
+        m.reply(Body::ByteArray(response.into_bytes()));
     });
     let net_server = vertx.create_net_server();
     net_server.listen(9091, move |_req, ev| {
@@ -36,7 +36,7 @@ fn main() {
             },
         );
         let body = rx.recv().unwrap();
-        let body = body.as_string().unwrap();
+        let body = body.as_bytes().unwrap();
         let data = format!(
             r#"
 HTTP/1.1 200 OK
@@ -46,7 +46,7 @@ Content-Length: {len}
 
 {json_body}"#,
             len = body.len(),
-            json_body = body
+            json_body = String::from_utf8_lossy(body)
         );
         resp.extend_from_slice(data.as_bytes());
         resp
@@ -60,7 +60,7 @@ Content-Length: {len}
                 let _ = tx.send(m.body());
             });
             let body = rx.recv().unwrap();
-            let body = body.as_string().unwrap();
+            let body = body.as_bytes().unwrap();
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")

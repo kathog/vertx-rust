@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::ops::Deref;
+use crate::vertx::message::Body::{ByteArray, Byte, Short};
 
 //Message used in event bus in standalone instance and cluster
 #[derive(Clone, Default, Debug)]
@@ -40,7 +41,89 @@ pub enum Body {
     Char(char),
     Null,
     Ping
+}
 
+impl Body {
+
+    #[inline]
+    pub fn is_null(&self) -> bool {
+        match self {
+            Body::Null => true,
+            _ => false
+        }
+    }
+
+    #[inline]
+    pub fn as_bool(&self) -> Result<bool, &str> {
+        match self {
+            Body::Boolean(s) => Ok(*s),
+            _ => Err("Body type is not a bool")
+        }
+    }
+
+    #[inline]
+    pub fn as_f64(&self) -> Result<f64, &str> {
+        match self {
+            Body::Double(s) => Ok(*s),
+            _ => Err("Body type is not a f64")
+        }
+    }
+
+    #[inline]
+    pub fn as_f32(&self) -> Result<f32, &str> {
+        match self {
+            Body::Float(s) => Ok(*s),
+            _ => Err("Body type is not a f32")
+        }
+    }
+
+    #[inline]
+    pub fn as_i64(&self) -> Result<i64, &str> {
+        match self {
+            Body::Long(s) => Ok(*s),
+            _ => Err("Body type is not a i64")
+        }
+    }
+    
+    #[inline]
+    pub fn as_i32(&self) -> Result<i32, &str> {
+        match self {
+            Body::Int(s) => Ok(*s),
+            _ => Err("Body type is not a i32")
+        }
+    }
+
+    #[inline]
+    pub fn as_i16(&self) -> Result<i16, &str> {
+        match self {
+            Short(s) => Ok(*s),
+            _ => Err("Body type is not a i16")
+        }
+    }
+
+    #[inline]
+    pub fn as_u8(&self) -> Result<u8, &str> {
+        match self {
+            Byte(s) => Ok(*s),
+            _ => Err("Body type is not a u8")
+        }
+    }
+
+    #[inline]
+    pub fn as_string(&self) -> Result<&String, &str> {
+        match self {
+            Body::String(s) => Ok(s),
+            _ => Err("Body type is not a String")
+        }
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> Result<&Vec<u8>, &str> {
+        match self {
+            ByteArray(s) => Ok(s),
+            _ => Err("Body type is not a Byte Array")
+        }
+    }
 }
 
 impl Default for Body {

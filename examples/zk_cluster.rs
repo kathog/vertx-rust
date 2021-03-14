@@ -14,13 +14,9 @@ fn main() {
 
     event_bus.consumer("test.01", move |m, _| {
         let body = m.body();
-        let body = match body.as_ref() {
-            Body::String (s) => s,
-            _ => panic!()
-        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = body
+            code = body.as_string().unwrap()
         );
         m.reply(Body::String(response));
     });
@@ -32,10 +28,6 @@ fn main() {
             let _ = tx.send(m.body());
         });
         let body = rx.recv().unwrap();
-        let body = match body.as_ref() {
-            Body::String (s) => s,
-            _ => panic!()
-        };
         let data = format!(
             r#"
 HTTP/1.1 200 OK
@@ -44,7 +36,7 @@ Date: Sun, 03 May 2020 07:05:15 GMT
 Content-Length: 16
 
 {json_body}"#,
-            json_body = body
+            json_body = body.as_string().unwrap()
         );
         resp.extend_from_slice(data.as_bytes());
         resp

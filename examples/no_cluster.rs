@@ -18,15 +18,9 @@ fn main() {
 
     event_bus.consumer("test.01", move |m, _| {
         let b = m.body();
-        let body = match b.as_ref() {
-            Body::Int(s) => {
-                s
-            },
-            _ => panic!()
-        };
         let response = format!(
             r#"{{"health": "{code}"}}"#,
-            code = body
+            code = b.as_i32().unwrap()
         );
         m.reply(Body::String(response));
     });
@@ -42,12 +36,7 @@ fn main() {
             },
         );
         let body = rx.recv().unwrap();
-        let body = match body.as_ref() {
-            Body::String(s) => {
-                s
-            }
-            _ => panic!()
-        };
+        let body = body.as_string().unwrap();
         let data = format!(
             r#"
 HTTP/1.1 200 OK
@@ -71,16 +60,11 @@ Content-Length: {len}
                 let _ = tx.send(m.body());
             });
             let body = rx.recv().unwrap();
-            let body = match body.as_ref() {
-                Body::Int(s) => {
-                    s
-                }
-                _ => panic!()
-            };
+            let body = body.as_string().unwrap();
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(body.to_string().into())
+                .body(body.clone().into())
                 .unwrap())
         })
         .post("/", move |req, _| {

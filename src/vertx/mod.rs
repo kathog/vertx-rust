@@ -132,11 +132,11 @@ pub struct Vertx<CM: 'static + ClusterManager + Send + Sync> {
 impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
     pub fn new(options: VertxOptions) -> Vertx<CM> {
         let event_bus = EventBus::<CM>::new(options.event_bus_options.clone());
-        return Vertx {
+        Vertx {
             options,
             event_bus: Arc::new(event_bus),
             ph: PhantomData,
-        };
+        }
     }
 
     pub fn set_cluster_manager(&mut self, cm: CM) {
@@ -151,11 +151,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
         let mut signals = Signals::new(&[2]).unwrap();
         let event_bus = self.event_bus.clone();
         std::thread::spawn(move || {
-            for sig in signals.forever() {
-                info!("received signal {:?}", sig);
-                event_bus.stop();
-                break;
-            }
+            let sig = signals.forever().next();
+            info!("received signal {:?}", sig);
+            event_bus.stop();
         });
         self.event_bus.start();
     }
@@ -176,7 +174,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
                 opt_ev.init();
             }
         });
-        return self.event_bus.clone();
+        self.event_bus.clone()
     }
 
     pub fn stop(&self) {
@@ -222,7 +220,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                     .unwrap(),
             ),
         };
-        return ev;
+        ev
     }
 
     fn set_cluster_manager(&mut self, cm: CM) {
@@ -282,7 +280,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let local_local_consumers = self.local_consumers.clone();
         let runtime = self.runtime.clone();
 
-        let joiner = std::thread::spawn(move || -> () {
+        let joiner = std::thread::spawn(move || {
             loop {
                 if !DO_INVOKE.load(Ordering::Relaxed) {
                     return;
@@ -324,11 +322,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                             );
                                             let subs = cm.get_subs();
                                             let nodes = subs.read().unwrap();
-                                            let nodes_lock = nodes.get_vec(&address.clone());
+                                            let nodes_lock = nodes.get_vec(&address);
 
                                             match nodes_lock {
                                                 Some(n) => {
-                                                    if n.len() == 0 {
+                                                    if n.is_empty() {
                                                         warn!("subs not found");
                                                     } else {
                                                         <EventBus<CM>>::send_message(
@@ -355,7 +353,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                         }
                                                         None => {
                                                             let host = mut_msg.host.clone();
-                                                            let port = mut_msg.port.clone();
+                                                            let port = mut_msg.port;
                                                             <EventBus<CM>>::send_reply(mut_msg, host, port);
                                                         }
                                                     }
@@ -400,9 +398,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         inner_sender: &Sender<Message>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
         mut mut_msg: &mut Message,
-        address: &String,
+        address: &str,
         cm: &mut CM,
-        nodes: &Vec<ClusterNodeInfo>,
+        nodes: &[ClusterNodeInfo],
         inner_cf: Arc<
             Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
         >,
@@ -452,7 +450,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         inner_sender: &&Sender<Message>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
         mut mut_msg: &mut &mut Message,
-        address: &&String,
+        address: &&str,
         cm: &mut CM,
         inner_cf: Arc<
             Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
@@ -461,7 +459,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     ) {
         let node = node.unwrap();
         let host = node.serverID.host.clone();
-        let port = node.serverID.port.clone();
+        let port = node.serverID.port;
 
         if node.nodeId == cm.get_node_id() {
             <EventBus<CM>>::call_local_func(
@@ -498,18 +496,12 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         ev: Arc<EventBus<CM>>,
     ) {
         let address = mut_msg.replay.clone();
-        match address {
-            Some(address) => {
-                let mut map = inner_cf.lock().unwrap();
-                let callback = map.remove(&address);
-                match callback {
-                    Some(caller) => {
-                        caller.call((mut_msg, ev.clone()));
-                    }
-                    None => {}
-                }
+        if let Some(address) = address {
+            let mut map = inner_cf.lock().unwrap();
+            let callback = map.remove(&address);
+            if let Some(caller) = callback {
+                caller.call((mut_msg, ev));
             }
-            None => {}
         }
     }
 
@@ -520,13 +512,13 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         >,
         inner_sender: &Sender<Message>,
         mut_msg: &mut Message,
-        address: &String,
+        address: &str,
         ev: Arc<EventBus<CM>>,
         inner_cf: Arc<
             Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
         >,
     ) {
-        let callback = inner_consummers.get(&address.clone());
+        let callback = inner_consummers.get(&address.to_string());
         match callback {
             Some(caller) => {
                 caller.call((mut_msg, ev));
@@ -535,12 +527,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             None => {
                 let mut map = inner_cf.lock().unwrap();
                 let callback = map.remove(address);
-                match callback {
-                    Some(caller) => {
-                        let msg = mut_msg.clone();
-                        caller.call((&msg, ev.clone()));
-                    }
-                    None => {}
+                if let Some(caller) = callback {
+                    let msg = mut_msg.clone();
+                    caller.call((&msg, ev));
                 }
             }
         }
@@ -652,7 +641,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
             let _ = send.send(msg);
 
-            return resp;
+            resp
         });
         net_server
     }
@@ -687,7 +676,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn send(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
-            address: Some(addr.clone()),
+            address: Some(addr),
             replay: None,
             body: Arc::new(request),
             ..Default::default()
@@ -700,7 +689,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn publish(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
-            address: Some(addr.clone()),
+            address: Some(addr),
             replay: None,
             body: Arc::new(request),
             publish: true,
@@ -717,7 +706,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     {
         let addr = address.to_owned();
         let message = Message {
-            address: Some(addr.clone()),
+            address: Some(addr),
             replay: Some(format!(
                 "__vertx.reply.{}",
                 uuid::Uuid::new_v4().to_string()

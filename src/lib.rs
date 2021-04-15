@@ -3,7 +3,7 @@
 #![feature(plugin)]
 #![feature(type_name_of_val)]
 #![feature(array_methods)]
-#![feature(assoc_char_funcs)]
+#![allow(non_upper_case_globals)]
 #[cfg(feature = "tc")]
 extern crate tcmalloc;
 #[cfg(feature = "tc")]
@@ -16,7 +16,6 @@ pub static ALLOCATOR: TCMalloc = TCMalloc;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[allow(non_upper_case_globals)]
 extern crate hypospray;
 #[macro_use]
 extern crate jvm_macro;

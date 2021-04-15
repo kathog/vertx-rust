@@ -14,6 +14,7 @@ mod test {
 
     #[test]
     fn test_blocking_get() {
+        std::env::set_var("RUST_LOG", "info");
         pretty_env_logger::init_timed();
 
         let client = WebClient::new();
@@ -23,6 +24,7 @@ mod test {
 
     #[test]
     fn test_blocking_request() {
+        std::env::set_var("RUST_LOG", "info");
         pretty_env_logger::init_timed();
 
         let client = WebClient::new();
@@ -40,6 +42,7 @@ mod test {
 
     #[test]
     fn test_get() {
+        std::env::set_var("RUST_LOG", "info");
         pretty_env_logger::init_timed();
         let rt = Runtime::new().unwrap();
         let client = WebClient::new();

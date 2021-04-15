@@ -47,10 +47,7 @@ impl Body {
 
     #[inline]
     pub fn is_null(&self) -> bool {
-        match self {
-            Body::Null => true,
-            _ => false
-        }
+        matches!(self, Body::Null)
     }
 
     #[inline]
@@ -135,7 +132,7 @@ impl Default for Body {
 impl Message {
     #[inline]
     pub fn body(&self) -> Arc<Body> {
-        return self.body.clone();
+        self.body.clone()
     }
 
     //Reply message to event bus
@@ -154,7 +151,7 @@ impl Message {
                 uuid::Uuid::new_v4().to_string()
             )),
             body: Arc::new(Body::String(uuid::Uuid::new_v4().to_string())),
-            port: 44532 as i32,
+            port: 44532_i32,
             host: "localhost".to_string(),
             ..Default::default()
         }
@@ -236,7 +233,7 @@ impl From<Vec<u8>> for Message {
         }
 
         Message {
-            address: Some(address.to_string()),
+            address: Some(address),
             replay,
             port,
             host,
@@ -252,7 +249,7 @@ impl Message {
     //Serialize message to byte array
     #[inline]
     pub fn to_vec(&self) -> Result<Vec<u8>, &str> {
-        let mut data = vec![];
+        let mut data = Vec::with_capacity(2048);
         data.push(1);
 
         let mut b0 = vec![];
@@ -286,9 +283,9 @@ impl Message {
             Body::Boolean(b) => {
                 data.push(3);
                 if *b {
-                    b0.extend_from_slice((1 as i8).to_be_bytes().as_slice())
+                    b0.extend_from_slice((1_i8).to_be_bytes().as_slice())
                 } else {
-                    b0.extend_from_slice((0 as i8).to_be_bytes().as_slice())
+                    b0.extend_from_slice((0_i8).to_be_bytes().as_slice())
                 }
             }
             Body::Null => {
@@ -321,13 +318,13 @@ impl Message {
                 data.extend_from_slice(addr.as_bytes());
             }
             None => {
-                data.extend_from_slice(&(0 as i32).to_be_bytes());
+                data.extend_from_slice(&(0_i32).to_be_bytes());
             }
         }
         data.extend_from_slice(&self.port.to_be_bytes());
         data.extend_from_slice(&(self.host.len() as i32).to_be_bytes());
         data.extend_from_slice(self.host.as_bytes());
-        data.extend_from_slice(&(4 as i32).to_be_bytes());
+        data.extend_from_slice(&(4_i32).to_be_bytes());
         // data.extend_from_slice(&(self.body.len() as i32).to_be_bytes());
         data.extend_from_slice(b0.as_slice());
 
@@ -335,6 +332,6 @@ impl Message {
         for idx in 0..4 {
             data.insert(idx, len[idx]);
         }
-        return Ok(data);
+        Ok(data)
     }
 }

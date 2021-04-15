@@ -145,7 +145,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
         let callers = Arc::get_mut(&mut self.callers).unwrap();
         callers.insert((path.to_owned(), method), Arc::new(op));
 
-        return self;
+        self
     }
 
     pub fn listen_with_default<OP>(&mut self, port: u16, mut default: OP)
@@ -204,7 +204,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
             let ev = ev.clone();
             let callers = callers.clone();
             async move {
-                let x = Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                     let ev = ev.clone();
                     let callers = callers.clone();
                     async move {
@@ -213,9 +213,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                         let op = callers.get(&(req.uri().path().to_owned(), req.method().clone()));
                         <HttpServer<CM>>::invoke_function(req, ev, op)
                     }
-                }));
-
-                x
+                }))
             }
         });
 

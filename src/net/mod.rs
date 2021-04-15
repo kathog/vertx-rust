@@ -26,7 +26,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
         self.port = listener.local_addr().unwrap().port();
 
         let ev = self.event_bus.clone();
-        let ev = ev.unwrap().clone();
+        let ev = ev.unwrap();
         let sender = ev.sender.lock().unwrap();
 
         let clonse_sender = sender.clone();

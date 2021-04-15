@@ -30,6 +30,10 @@ lazy_static! {
     static ref DO_INVOKE: AtomicBool = AtomicBool::new(true);
 }
 
+type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
+type BoxFnMessageImmutable<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
+
+
 //Vertx options
 #[derive(Debug, Clone)]
 pub struct VertxOptions {
@@ -184,11 +188,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 
 pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     options: EventBusOptions,
-    consumers: Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+    consumers: Arc<HashMap<String, BoxFnMessage<CM>>>,
     local_consumers:
-        Arc<HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+        Arc<HashMap<String, BoxFnMessage<CM>>>,
     callback_functions:
-        Arc<Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>>,
+        Arc<Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>>,
     pub(crate) sender: Mutex<Sender<Message>>,
     receiver_joiner: Arc<JoinHandle<()>>,
     cluster_manager: Arc<Option<CM>>,
@@ -268,10 +272,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         &mut self,
         receiver: Receiver<Message>,
         local_consumers: Arc<
-            HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>,
+            HashMap<String, BoxFnMessage<CM>>,
         >,
         local_cf: Arc<
-            Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+            Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>,
         >,
         local_sender: Sender<Message>,
     ) {
@@ -393,7 +397,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     fn send_message(
         inner_consummers: &Arc<
-            HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>,
+            HashMap<String, BoxFnMessage<CM>>,
         >,
         inner_sender: &Sender<Message>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
@@ -402,7 +406,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         cm: &mut CM,
         nodes: &[ClusterNodeInfo],
         inner_cf: Arc<
-            Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+            Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>,
         >,
     ) {
         if mut_msg.publish {
@@ -445,7 +449,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     fn send_to_node(
         inner_consummers: &&Arc<
-            HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>,
+            HashMap<String, BoxFnMessage<CM>>,
         >,
         inner_sender: &&Sender<Message>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
@@ -453,7 +457,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         address: &&str,
         cm: &mut CM,
         inner_cf: Arc<
-            Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+            Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>,
         >,
         node: &mut Option<&ClusterNodeInfo>,
     ) {
@@ -490,7 +494,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     fn call_replay(
         inner_cf: Arc<
-            Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+            Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>,
         >,
         mut_msg: &Message,
         ev: Arc<EventBus<CM>>,
@@ -508,14 +512,14 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     fn call_local_func(
         inner_consummers: &Arc<
-            HashMap<String, Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>>,
+            HashMap<String, BoxFnMessage<CM>>,
         >,
         inner_sender: &Sender<Message>,
         mut_msg: &mut Message,
         address: &str,
         ev: Arc<EventBus<CM>>,
         inner_cf: Arc<
-            Mutex<HashMap<String, Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>>>,
+            Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>,
         >,
     ) {
         let callback = inner_consummers.get(&address.to_string());

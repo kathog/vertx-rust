@@ -252,56 +252,39 @@ impl Message {
         let mut data = Vec::with_capacity(2048);
         data.push(1);
 
-        let mut b0 = vec![];
         match self.body.deref() {
-            Body::Int(b) => {
+            Body::Int(_) => {
                 data.push(5);
-                b0.extend_from_slice(b.to_be_bytes().as_slice());
             }
-            Body::Long(b) => {
+            Body::Long(_) => {
                 data.push(6);
-                b0.extend_from_slice(b.to_be_bytes().as_slice());
             }
-            Body::Float(b) => {
+            Body::Float(_) => {
                 data.push(7);
-                b0.extend_from_slice(b.to_be_bytes().as_slice());
             }
-            Body::Double(b) => {
+            Body::Double(_) => {
                 data.push(8);
-                b0.extend_from_slice(b.to_be_bytes().as_slice());
             }
-            Body::String(b) => {
+            Body::String(_) => {
                 data.push(9);
-                b0.extend_from_slice(&(b.len() as i32).to_be_bytes());
-                b0.extend_from_slice(b.as_bytes());
             }
-            Body::ByteArray(b) => {
+            Body::ByteArray(_) => {
                 data.push(12);
-                b0.extend_from_slice(&(b.len() as i32).to_be_bytes());
-                b0.extend_from_slice(b.as_slice());
             }
-            Body::Boolean(b) => {
+            Body::Boolean(_) => {
                 data.push(3);
-                if *b {
-                    b0.extend_from_slice((1_i8).to_be_bytes().as_slice())
-                } else {
-                    b0.extend_from_slice((0_i8).to_be_bytes().as_slice())
-                }
             }
             Body::Null => {
                 data.push(0);
             }
-            Body::Byte(b) => {
+            Body::Byte(_) => {
                 data.push(2);
-                b0.push(*b);
             }
-            Body::Short(b) => {
+            Body::Short(_) => {
                 data.push(4);
-                b0.extend_from_slice(b.to_be_bytes().as_slice());
             }
-            Body::Char(b) => {
+            Body::Char(_) => {
                 data.push(10);
-                b0.extend_from_slice((((*b) as u32) as i16).to_be_bytes().as_slice());
             }
             Body::Ping => {
                 data.push(1);
@@ -325,8 +308,46 @@ impl Message {
         data.extend_from_slice(&(self.host.len() as i32).to_be_bytes());
         data.extend_from_slice(self.host.as_bytes());
         data.extend_from_slice(&(4_i32).to_be_bytes());
-        // data.extend_from_slice(&(self.body.len() as i32).to_be_bytes());
-        data.extend_from_slice(b0.as_slice());
+
+        match self.body.deref() {
+            Body::Int(b) => {
+                data.extend_from_slice(b.to_be_bytes().as_slice());
+            }
+            Body::Long(b) => {
+                data.extend_from_slice(b.to_be_bytes().as_slice());
+            }
+            Body::Float(b) => {
+                data.extend_from_slice(b.to_be_bytes().as_slice());
+            }
+            Body::Double(b) => {
+                data.extend_from_slice(b.to_be_bytes().as_slice());
+            }
+            Body::String(b) => {
+                data.extend_from_slice(&(b.len() as i32).to_be_bytes());
+                data.extend_from_slice(b.as_bytes());
+            }
+            Body::ByteArray(b) => {
+                data.extend_from_slice(&(b.len() as i32).to_be_bytes());
+                data.extend_from_slice(b.as_slice());
+            }
+            Body::Boolean(b) => {
+                if *b {
+                    data.extend_from_slice((1_i8).to_be_bytes().as_slice())
+                } else {
+                    data.extend_from_slice((0_i8).to_be_bytes().as_slice())
+                }
+            }
+            Body::Byte(b) => {
+                data.push(*b);
+            }
+            Body::Short(b) => {
+                data.extend_from_slice(b.to_be_bytes().as_slice());
+            }
+            Body::Char(b) => {
+                data.extend_from_slice((((*b) as u32) as i16).to_be_bytes().as_slice());
+            }
+            _ => {}
+        };
 
         let len = ((data.len()) as i32).to_be_bytes();
         for idx in 0..4 {

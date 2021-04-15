@@ -292,10 +292,11 @@ impl Message {
         };
 
         data.push(0);
-        let address = self.address.clone().expect("Replay message not found!");
-        data.extend_from_slice(&(address.len() as i32).to_be_bytes());
-        data.extend_from_slice(address.as_bytes());
-        match self.replay.clone() {
+        if let Some(address) = &self.address {
+            data.extend_from_slice(&(address.len() as i32).to_be_bytes());
+            data.extend_from_slice(address.as_bytes());
+        }
+        match &self.replay {
             Some(addr) => {
                 data.extend_from_slice(&(addr.len() as i32).to_be_bytes());
                 data.extend_from_slice(addr.as_bytes());

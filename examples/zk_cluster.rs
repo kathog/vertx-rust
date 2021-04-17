@@ -1,7 +1,10 @@
-use crossbeam_channel::unbounded;
+use crossbeam_channel::bounded;
 use vertx_rust::vertx::{Vertx, VertxOptions};
 use vertx_rust::zk::ZookeeperClusterManager;
 use vertx_rust::vertx::message::Body;
+use hyper::StatusCode;
+use hyper::Response;
+use vertx_rust::http::client::WebClient;
 
 fn main() {
     pretty_env_logger::init_timed();
@@ -20,27 +23,26 @@ fn main() {
         );
         m.reply(Body::String(response));
     });
-    let net_server = vertx.create_net_server();
-    net_server.listen(9091, move |_req, ev| {
-        let mut resp = vec![];
-        let (tx, rx) = unbounded();
-        ev.request("test.01", Body::String("UP".to_string()), move |m, _| {
-            let _ = tx.send(m.body());
+
+    let mut http_server = vertx.create_http_server();
+    http_server
+        .get("/", move |_req, ev| {
+            let (tx, rx) = bounded(1);
+            ev.request("test.01", Body::String("UP".to_string()), move |m, _| {
+                let _ = tx.send(m.body());
+            });
+            let body = rx.recv().unwrap();
+            let body = body.as_string().unwrap();
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(body.clone().into())
+                .unwrap())
+        }).listen_with_default(9091, move |_, _| {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body("NOTFOUND".as_bytes().into())
+                .unwrap())
         });
-        let body = rx.recv().unwrap();
-        let data = format!(
-            r#"
-HTTP/1.1 200 OK
-content-type: application/json
-Date: Sun, 03 May 2020 07:05:15 GMT
-Content-Length: 16
-
-{json_body}"#,
-            json_body = body.as_string().unwrap()
-        );
-        resp.extend_from_slice(data.as_bytes());
-        resp
-    });
-
     vertx.start();
 }

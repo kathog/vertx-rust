@@ -4,7 +4,6 @@ use vertx_rust::zk::ZookeeperClusterManager;
 use vertx_rust::vertx::message::Body;
 use hyper::StatusCode;
 use hyper::Response;
-use vertx_rust::http::client::WebClient;
 
 fn main() {
     pretty_env_logger::init_timed();

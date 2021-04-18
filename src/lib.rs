@@ -29,3 +29,6 @@ pub mod vertx;
 
 #[cfg(feature = "zk")]
 pub mod zk;
+
+#[cfg(feature = "hz")]
+pub mod hz;

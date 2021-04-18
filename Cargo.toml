@@ -16,6 +16,7 @@ default = ["client"]
 zk = ["zookeeper"]
 tc = ["tcmalloc"]
 client = ["hyper-tls"]
+hz = ["conan", "cmake"]
 
 
 [dependencies]
@@ -43,6 +44,10 @@ signal-hook = "0.3"
 
 [dev-dependencies]
 pretty_env_logger = "0.4"
+
+[build-dependencies]
+conan = { version = "0.1", optional = true }
+cmake = { version = "0.1", optional = true }
 
 [profile.release]
 opt-level = 3

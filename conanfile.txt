@@ -1,0 +1,6 @@
+[requires]
+hazelcast-cpp-client/4.0.1
+boost/1.75.0
+
+[generators]
+cmake

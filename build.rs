@@ -22,9 +22,6 @@ fn main() {
                 .build();
 
             let build_info = command.generate().unwrap();
-            // let hz_include = build_info.get_dependency("hazelcast-cpp-client").unwrap().get_include_dir().unwrap();
-            // let boost_include = build_info.get_dependency("boost").unwrap().get_include_dir().unwrap();
-
             let dst = Config::new("./")
                 .cxxflag("-O3")
                 .build();
@@ -32,7 +29,6 @@ fn main() {
             println!("cargo:rustc-link-search=native={}", dst.display());
             build_info.cargo_emit();
             println!("cargo:rustc-link-lib=dylib=stdc++");
-            // println!("cargo:rustc-link-lib=hzlib");
         }
 
 }

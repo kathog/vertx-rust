@@ -287,7 +287,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let joiner = std::thread::spawn(move || {
             loop {
                 if !DO_INVOKE.load(Ordering::Relaxed) {
-                    return;
+                    return
                 }
                 match receiver.recv() {
                     Ok(msg) => {

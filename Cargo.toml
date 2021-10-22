@@ -37,16 +37,19 @@ multimap = "0.8"
 jvm-serializable = {version = "0.0.3"}
 jvm-macro = {version = "0.0.1"}
 log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
-crossbeam-channel = "0.5.0"
+crossbeam-channel = "0.5"
 hyper = {version = "0.14", features = ["full"] }
 signal-hook = "0.3"
+atomic_refcell = "0.1"
+mio = "0.7"
+parking_lot = { version = "0.11", features = ["nightly"] }
 
 [dev-dependencies]
 pretty_env_logger = "0.4"
 
 [profile.release]
 opt-level = 3
-debug = false
+debug = true
 #rpath = false
 #debug-assertions = false
 lto = "fat"

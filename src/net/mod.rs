@@ -27,7 +27,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
 
         let ev = self.event_bus.clone();
         let ev = ev.unwrap();
-        let sender = ev.sender.lock().unwrap();
+        let sender = ev.sender.lock();
 
         let clonse_sender = sender.clone();
         std::thread::spawn(move || loop {

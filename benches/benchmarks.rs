@@ -8,6 +8,12 @@ extern crate vertx_rust;
 use std::sync::Arc;
 use vertx_rust::vertx::cm::NoClusterManager;
 use vertx_rust::vertx::*;
+use test::Bencher;
+use futures::StreamExt;
+use futures::task::Poll;
+use std::time::Duration;
+use std::io::{Write, Read};
+use concurrent_queue::ConcurrentQueue;
 
 lazy_static! {
     static ref VERTX: Vertx<NoClusterManager> = {
@@ -86,4 +92,27 @@ fn deserialize_message(b: &mut test::Bencher) {
     b.iter(|| {
         Message::from(bytes.clone());
     });
+}
+
+#[bench]
+fn unbounded_uncontended(b: &mut Bencher) {
+    let (tx, mut rx) = futures_channel::mpsc::unbounded();
+    b.iter(|| {
+
+            let m = Message::generate();
+            futures_channel::mpsc::UnboundedSender::unbounded_send(&tx, m).expect("send");
+            rx.try_next().unwrap();
+    })
+}
+
+#[bench]
+fn unbounded_crossbeam_uncontended(b: &mut Bencher) {
+    let (tx, mut rx) = crossbeam_channel::unbounded();
+    b.iter(|| {
+
+            let m = Message::generate();
+            tx.send(m);
+
+            rx.recv();
+    })
 }

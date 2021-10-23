@@ -21,7 +21,6 @@ use tokio::net::TcpStream;
 use tokio::runtime::{Builder, Runtime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
-use mio::unix::pipe;
 use parking_lot::Mutex;
 
 static EV_INIT: Once = Once::new();
@@ -196,7 +195,6 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     callback_functions:
         Arc<Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>>,
     pub(crate) sender: Mutex<Sender<Message>>,
-    pub(crate) mio_sender: Mutex<mio::unix::pipe::Sender>,
     receiver_joiner: Arc<JoinHandle<()>>,
     cluster_manager: Arc<Option<CM>>,
     event_bus_port: u16,
@@ -207,7 +205,6 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
 impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
         let (sender, _): (Sender<Message>, Receiver<Message>) = unbounded();
-        let (mio_sender, _) = pipe::new().unwrap();
         let receiver_joiner = std::thread::spawn(|| {});
         let pool_size = options.event_bus_pool_size;
         let ev = EventBus {
@@ -216,7 +213,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             local_consumers: Arc::new(HashMap::new()),
             callback_functions: Arc::new(Mutex::new(HashMap::new())),
             sender: Mutex::new(sender),
-            mio_sender: Mutex::new(mio_sender),
             receiver_joiner: Arc::new(receiver_joiner),
             cluster_manager: Arc::new(None),
             event_bus_port: 0,
@@ -257,10 +253,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let (sender, receiver): (Sender<Message>, Receiver<Message>) =
             bounded(self.options.event_bus_queue_size);
         self.sender = Mutex::new(sender);
-
-        let (mio_sender, mio_receiver) = pipe::new().unwrap();
-        self.mio_sender = Mutex::new(mio_sender);
-
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();
         let local_sender = self.sender.lock().clone();

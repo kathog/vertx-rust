@@ -13,14 +13,17 @@ pub struct Message {
     //Binary body content
     pub(crate) body: Arc<Body>,
     //Protocol version
+    #[allow(dead_code)]
     pub(crate) protocol_version: i32,
     //System codec id
+    #[allow(dead_code)]
     pub(crate) system_codec_id: i32,
     //Port to replay message
     pub(crate) port: i32,
     //Host to replay message
     pub(crate) host: String,
     //Headers
+    #[allow(dead_code)]
     pub(crate) headers: i32,
     //Message send as publish to all nodes in sub
     pub(crate) publish: bool,

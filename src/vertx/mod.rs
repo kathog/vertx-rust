@@ -7,7 +7,6 @@ use crate::net::NetServer;
 use crate::vertx::cm::{ClusterManager, ClusterNodeInfo, ServerID};
 use crate::vertx::message::{Message, Body};
 use core::fmt::Debug;
-use crossbeam_channel::*;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use signal_hook::iterator::Signals;
@@ -21,6 +20,7 @@ use tokio::net::TcpStream;
 use tokio::runtime::{Builder, Runtime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
+use std::sync::mpsc::{Receiver, Sender};
 use parking_lot::Mutex;
 
 static EV_INIT: Once = Once::new();
@@ -204,7 +204,7 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
 
 impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
-        let (sender, _): (Sender<Message>, Receiver<Message>) = unbounded();
+        let (sender, _): (Sender<Message>, Receiver<Message>) = std::sync::mpsc::channel();
         let receiver_joiner = std::thread::spawn(|| {});
         let pool_size = options.event_bus_pool_size;
         let ev = EventBus {
@@ -250,8 +250,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     fn init(&mut self) {
-        let (sender, receiver): (Sender<Message>, Receiver<Message>) =
-            bounded(self.options.event_bus_queue_size);
+        let (sender, receiver): (Sender<Message>, Receiver<Message>) = std::sync::mpsc::channel();
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();

@@ -100,3 +100,15 @@ fn unbounded_crossbeam_uncontended(b: &mut Bencher) {
             let _ = rx.recv();
     })
 }
+
+#[bench]
+fn unbounded_std(b: &mut Bencher) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    b.iter(|| {
+
+        let m = Message::generate();
+        let _ = tx.send(m);
+
+        let _ = rx.recv();
+    })
+}

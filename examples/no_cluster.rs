@@ -62,37 +62,37 @@ Content-Length: {len}
 
     }).await;
 
-    // let mut http_server = vertx.create_http_server();
-    // http_server
-    //     .get("/", move |_req, ev| {
-    //         let (tx, rx) = bounded(1);
-    //         ev.request("test.01", Body::Int(102), move |m, _| {
-    //             let _ = tx.send(m.body());
-    //         }).await;
-    //         let body = rx.recv().unwrap();
-    //         let body = body.as_bytes().unwrap();
-    //         Ok(Response::builder()
-    //             .status(StatusCode::OK)
-    //             .header("content-type", "application/json")
-    //             .body(body.clone().into())
-    //             .unwrap())
-    //     })
-    //     .post("/", move |req, _| {
-    //         let body = req.into_body();
-    //         let body = WebClient::blocking_body(body).unwrap();
-    //
-    //         Ok(Response::builder()
-    //             .status(StatusCode::OK)
-    //             .header("content-type", "application/json")
-    //             .body(body.into())
-    //             .unwrap())
-    //     })
-    //     .listen_with_default(9092, move |_, _| {
-    //         Ok(Response::builder()
-    //             .status(StatusCode::OK)
-    //             .body("NIMA".as_bytes().into())
-    //             .unwrap())
-    //     });
+    let mut http_server = vertx.create_http_server();
+    http_server
+        .get("/", move |_req, ev| {
+            let (tx, rx) = bounded(1);
+            ev.request("test.01", Body::Int(102), move |m, _| {
+                let _ = tx.send(m.body());
+            });
+            let body = rx.recv().unwrap();
+            let body = body.as_bytes().unwrap();
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(body.clone().into())
+                .unwrap())
+        })
+        .post("/", move |req, _| {
+            let body = req.into_body();
+            let body = WebClient::blocking_body(body).unwrap();
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(body.into())
+                .unwrap())
+        })
+        .listen_with_default(9092, move |_, _| {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body("NIMA".as_bytes().into())
+                .unwrap())
+        });
 
     vertx.start().await;
 }

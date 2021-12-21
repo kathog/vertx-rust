@@ -24,25 +24,5 @@ async fn main() {
         m.reply(Body::String(response));
     });
 
-    let mut http_server = vertx.create_http_server();
-    http_server
-        .get("/", move |_req, ev| {
-            let (tx, rx) = bounded(1);
-            ev.request("test.01", Body::String("UP".to_string()), move |m, _| {
-                let _ = tx.send(m.body());
-            });
-            let body = rx.recv().unwrap();
-            let body = body.as_string().unwrap();
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(body.clone().into())
-                .unwrap())
-        }).listen_with_default(9091, move |_, _| {
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body("NOTFOUND".as_bytes().into())
-                .unwrap())
-        });
     vertx.start().await;
 }

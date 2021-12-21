@@ -482,7 +482,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
             let mut message: &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
-            tokio::spawn(async move {
+            // tokio::spawn(async move {
                 let tcp_stream = TCPS.get(&node_id);
                 match tcp_stream {
                     Some(stream) => <EventBus<CM>>::get_stream(&mut message, stream).await,
@@ -491,7 +491,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                         <EventBus<CM>>::create_stream(&mut message, host, port, node_id).await;
                     }
                 }
-            });
+            // });
         }
     }
 
@@ -585,7 +585,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     #[inline]
     async fn send_reply(mut_msg: Message, host: String, port: i32) {
-        tokio::spawn(async move {
+        // tokio::spawn(async move {
 
             let tcp_stream = TCPS.get(&format!("{}_{}", host.clone(), port));
             match tcp_stream {
@@ -619,7 +619,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                     }
                 }
             }
-        });
+        // });
 
     }
 

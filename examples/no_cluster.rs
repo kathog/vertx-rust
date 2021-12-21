@@ -13,6 +13,7 @@ use vertx_rust::vertx::message::Body;
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init_timed();
+    console_subscriber::init();
 
     let mut vertx_options = VertxOptions::default();
     vertx_options

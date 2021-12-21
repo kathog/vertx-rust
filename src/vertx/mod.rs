@@ -158,7 +158,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
         tokio::spawn(async move {
             let sig = signals.forever().next();
             info!("received signal {:?}", sig);
-            event_bus.stop();
+            event_bus.stop().await;
         });
         self.event_bus.start().await;
     }
@@ -180,14 +180,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
                 opt_ev.init = true;
             }
         }
-
-        // EV_INIT.call_once(|| {
-        //
-        //     Handle::current().block_on(async move {
-        //
-        //     });
-        //
-        // });
         self.event_bus.clone()
     }
 
@@ -243,7 +235,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         unsafe {
             let val: JoinHandle<()> = std::ptr::read(&*h);
             val.await.unwrap();
-            info!("stop!");
         }
     }
 
@@ -327,45 +318,55 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                 "manager: {:?}",
                                                 cm.get_subs().read().unwrap().len()
                                             );
-                                            let subs = cm.get_subs();
-                                            // let nodes = subs.read().unwrap();
-                                            // let nodes_lock = nodes.get_vec(&address);
+                                            let nodes_lock = {
+                                                let subs = cm.get_subs();
+                                                let nodes = subs.read().unwrap();
+                                                match nodes.get_vec(&address) {
+                                                    None => None,
+                                                    Some(n) => {
+                                                        Some(n.to_vec())
+                                                    }
+                                                }
+                                            };
 
-                                            // match nodes_lock {
-                                            //     Some(n) => {
-                                            //         if n.is_empty() {
-                                            //             warn!("subs not found");
-                                            //         } else {
-                                            //             <EventBus<CM>>::send_message(
-                                            //                 &inner_consummers,
-                                            //                 &inner_sender,
-                                            //                 &inner_ev,
-                                            //                 &mut mut_msg,
-                                            //                 &address,
-                                            //                 cm,
-                                            //                 n,
-                                            //                 inner_cf,
-                                            //             ).await;
-                                            //         }
-                                            //     }
-                                            //     None => {
-                                            //         let mut map = inner_cf.lock();
-                                            //         let callback = map.remove(&address);
-                                            //         match callback {
-                                            //             Some(caller) => {
-                                            //                 caller.call((
-                                            //                     &mut_msg,
-                                            //                     inner_ev.clone().unwrap(),
-                                            //                 ));
-                                            //             }
-                                            //             None => {
-                                            //                 let host = mut_msg.host.clone();
-                                            //                 let port = mut_msg.port;
-                                            //                 <EventBus<CM>>::send_reply(mut_msg, host, port).await;
-                                            //             }
-                                            //         }
-                                            //     }
-                                            // }
+                                            match nodes_lock {
+                                                Some(n) => {
+                                                    if n.is_empty() {
+                                                        warn!("subs not found");
+                                                    } else {
+                                                        <EventBus<CM>>::send_message(
+                                                            &inner_consummers,
+                                                            &inner_sender,
+                                                            &inner_ev,
+                                                            &mut mut_msg,
+                                                            &address,
+                                                            cm,
+                                                            &n,
+                                                            inner_cf,
+                                                        ).await;
+                                                    }
+                                                }
+                                                None => {
+                                                    let callback = {
+                                                        let mut map = inner_cf.lock();
+                                                        map.remove(&address)
+                                                    };
+
+                                                    match callback {
+                                                        Some(caller) => {
+                                                            caller.call((
+                                                                &mut_msg,
+                                                                inner_ev.clone().unwrap(),
+                                                            ));
+                                                        }
+                                                        None => {
+                                                            let host = mut_msg.host.clone();
+                                                            let port = mut_msg.port;
+                                                            <EventBus<CM>>::send_reply(mut_msg, host, port).await;
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                         None => {
                                             // NoClusterManager
@@ -680,7 +681,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub async fn send(&self, address: &str, request: Body) {
+    pub fn send(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
             address: Some(addr),
@@ -693,7 +694,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    pub async fn publish(&self, address: &str, request: Body) {
+    pub fn publish(&self, address: &str, request: Body) {
         let addr = address.to_owned();
         let message = Message {
             address: Some(addr),

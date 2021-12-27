@@ -45,11 +45,15 @@ console-subscriber = "0.1"
 
 [dev-dependencies]
 pretty_env_logger = "0.4"
-criterion = "0.3.5"
+criterion = { version = "0.3.5", features = ["async"]}
+criterion-cycles-per-byte = "0.1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
+iai = "0.1"
 
 [[bench]]
+#path = "benches/iai_benchmarks.rs"
 path = "benches/benchmarks.rs"
+#paths = ["benches/benchmarks.rs", "benches/iai_benchmarks.rs"]
 name = "benchmarks"
 harness = false
 

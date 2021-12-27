@@ -25,7 +25,7 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 
 # Benchmarks
 
-Benchmarks on Dell G3 with Intel Core i7-8750H
+Benchmarks on AMD Ryzen 7 3800X
 
 ## Wrk benchmarks
 
@@ -35,11 +35,11 @@ wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/
 Running 2m test @ http://127.0.0.1:9092/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.56ms    1.87ms  39.83ms   82.74%
-    Req/Sec    40.29k     4.66k   63.80k    70.89%
-  18022166 requests in 1.50m, 2.08GB read
-Requests/sec: 200034.56
-Transfer/sec:     23.66MB
+    Latency     1.36ms  715.49us  26.70ms   70.35%
+    Req/Sec    74.64k     8.17k   92.34k    59.76%
+  33426081 requests in 1.50m, 3.89GB read
+Requests/sec: 371207.38
+Transfer/sec:     44.25MB
 ```
 Tcp server from **no_cluster** example:
 ```
@@ -47,11 +47,11 @@ wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/
 Running 2m test @ http://127.0.0.1:9091/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.47ms    3.20ms  99.24ms   91.42%
-    Req/Sec    50.67k     9.84k  105.72k    75.66%
-  22653909 requests in 1.50m, 2.53GB read
-Requests/sec: 251512.38
-Transfer/sec:     28.78MB
+    Latency     1.45ms  768.63us  11.52ms   70.22%
+    Req/Sec    70.55k     8.68k    103.19k    75.66%
+  31591444 requests in 1.50m, 3.56GB read
+Requests/sec: 350878.94
+Transfer/sec:     40.49MB
 ```
 
 ## Microbenchmarks
@@ -88,13 +88,13 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
 event_bus.consumer("test.01", move |m, _| {
   m.reply(..);
 });
 
-vertx.start();
+vertx.start().await;
 ```
 
 ### Eventbus send
@@ -104,7 +104,7 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
 event_bus.send("test.01", Body::String("Hello World".to_string()));
 ```
@@ -116,7 +116,7 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
 event_bus.request("test.01", Body::String("Hello World".to_string()), move |m, _| {
   ...
@@ -131,7 +131,7 @@ use vertx_rust::net::NetServer;
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
 let net_server = NetServer::new(Some(event_bus.clone()));
 net_server.listen(9091, move |_req, ev| {
@@ -140,7 +140,7 @@ net_server.listen(9091, move |_req, ev| {
   resp
 });
 
-vertx.start();
+vertx.start().await;
 
 ```
 

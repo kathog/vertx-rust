@@ -22,7 +22,7 @@ lazy_static! {
     static ref EVENT_BUS : Arc<EventBus<NoClusterManager>> = {
         let event_bus = RT.block_on(VERTX.event_bus());
         RT.block_on(async {
-            event_bus.consumer("test.01", move |m, _| {
+            event_bus.local_consumer("test.01", move |m, _| {
                 let b = m.body();
                 let response = format!(
                     r#"{{"health": "{code}"}}"#,

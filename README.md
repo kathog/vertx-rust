@@ -56,26 +56,40 @@ Transfer/sec:     40.49MB
 
 ## Microbenchmarks
 ```
-vertx_request           time:   [8.1251 us 8.1982 us 8.2809 us]                           
+serialize_cycles        time:   [260.7716 cycles 261.2144 cycles 261.6987 cycles]           
 Found 7 outliers among 100 measurements (7.00%)
-  5 (5.00%) high mild
-  2 (2.00%) high severe
-
-vertx_send              time:   [1.4308 us 1.4435 us 1.4594 us]                        
-Found 8 outliers among 100 measurements (8.00%)
-  3 (3.00%) low severe
-  2 (2.00%) low mild
+  1 (1.00%) low mild
+  3 (3.00%) high mild
   3 (3.00%) high severe
 
-vertx_publish           time:   [1.8024 us 1.8305 us 1.8527 us]                           
+deserialize_cycles      time:   [325.4613 cycles 325.8329 cycles 326.2337 cycles]             
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) high mild
+  2 (2.00%) high severe
 
-serialize_message       time:   [203.27 ns 203.72 ns 204.20 ns]                              
+serialize_message       time:   [66.672 ns 67.425 ns 68.939 ns]                              
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+deserialize_message     time:   [70.224 ns 70.403 ns 70.592 ns]                                
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) high mild
+  2 (2.00%) high severe
+
+vertx_request           time:   [4.5056 us 4.5872 us 4.6704 us]                           
 Found 6 outliers among 100 measurements (6.00%)
   6 (6.00%) high mild
 
-deserialize_message     time:   [145.16 ns 145.46 ns 145.79 ns]                                
-Found 3 outliers among 100 measurements (3.00%)
-  3 (3.00%) high severe
+vertx_send              time:   [274.87 ns 281.62 ns 289.84 ns]                       
+Found 8 outliers among 100 measurements (8.00%)
+  6 (6.00%) high mild
+  2 (2.00%) high severe
+
+vertx_publish           time:   [274.64 ns 279.26 ns 284.22 ns]                          
+Found 5 outliers among 100 measurements (5.00%)
+  5 (5.00%) high mild
+
 ```
 
 # Work with vertx-rust

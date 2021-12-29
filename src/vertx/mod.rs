@@ -306,80 +306,82 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                             inner_ev.clone().unwrap(),
                                             inner_cf,
                                         );
-                                        return;
-                                    }
-                                    // invoke function from consumer
-                                    let mut inner_cm0 = inner_cm.clone();
-                                    let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm0) };
-                                    match manager {
-                                        // ClusterManager
-                                        Some(cm) => {
-                                            debug!(
+                                        // return;
+                                    } else {
+                                        // invoke function from consumer
+                                        let mut inner_cm0 = inner_cm.clone();
+                                        let manager = unsafe { Arc::get_mut_unchecked(&mut inner_cm0) };
+                                        match manager {
+                                            // ClusterManager
+                                            Some(cm) => {
+                                                debug!(
                                                 "manager: {:?}",
                                                 cm.get_subs().read().unwrap().len()
                                             );
-                                            let nodes_lock = {
-                                                let subs = cm.get_subs();
-                                                let nodes = subs.read().unwrap();
-                                                match nodes.get_vec(&address) {
-                                                    None => None,
-                                                    Some(n) => {
-                                                        Some(n.to_vec())
-                                                    }
-                                                }
-                                            };
-
-                                            match nodes_lock {
-                                                Some(n) => {
-                                                    if n.is_empty() {
-                                                        warn!("subs not found");
-                                                    } else {
-                                                        <EventBus<CM>>::send_message(
-                                                            &inner_consummers,
-                                                            &inner_sender,
-                                                            &inner_ev,
-                                                            &mut mut_msg,
-                                                            &address,
-                                                            cm,
-                                                            &n,
-                                                            inner_cf,
-                                                        ).await;
-                                                    }
-                                                }
-                                                None => {
-                                                    let callback = {
-                                                        let mut map = inner_cf.lock();
-                                                        map.remove(&address)
-                                                    };
-
-                                                    match callback {
-                                                        Some(caller) => {
-                                                            caller.call((
-                                                                &mut_msg,
-                                                                inner_ev.clone().unwrap(),
-                                                            ));
+                                                let nodes_lock = {
+                                                    let subs = cm.get_subs();
+                                                    let nodes = subs.read().unwrap();
+                                                    match nodes.get_vec(&address) {
+                                                        None => None,
+                                                        Some(n) => {
+                                                            Some(n.to_vec())
                                                         }
-                                                        None => {
-                                                            let host = mut_msg.host.clone();
-                                                            let port = mut_msg.port;
-                                                            <EventBus<CM>>::send_reply(mut_msg, host, port).await;
+                                                    }
+                                                };
+
+                                                match nodes_lock {
+                                                    Some(n) => {
+                                                        if n.is_empty() {
+                                                            warn!("subs not found");
+                                                        } else {
+                                                            <EventBus<CM>>::send_message(
+                                                                &inner_consummers,
+                                                                &inner_sender,
+                                                                &inner_ev,
+                                                                &mut mut_msg,
+                                                                &address,
+                                                                cm,
+                                                                &n,
+                                                                inner_cf,
+                                                            ).await;
+                                                        }
+                                                    }
+                                                    None => {
+                                                        let callback = {
+                                                            let mut map = inner_cf.lock();
+                                                            map.remove(&address)
+                                                        };
+
+                                                        match callback {
+                                                            Some(caller) => {
+                                                                caller.call((
+                                                                    &mut_msg,
+                                                                    inner_ev.clone().unwrap(),
+                                                                ));
+                                                            }
+                                                            None => {
+                                                                let host = mut_msg.host.clone();
+                                                                let port = mut_msg.port;
+                                                                <EventBus<CM>>::send_reply(mut_msg, host, port).await;
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
-                                        None => {
-                                            // NoClusterManager
-                                            <EventBus<CM>>::call_local_func(
-                                                &inner_consummers,
-                                                &inner_sender,
-                                                &mut mut_msg,
-                                                &address,
-                                                inner_ev.clone().unwrap(),
-                                                inner_cf,
-                                            );
+                                            None => {
+                                                // NoClusterManager
+                                                <EventBus<CM>>::call_local_func(
+                                                    &inner_consummers,
+                                                    &inner_sender,
+                                                    &mut mut_msg,
+                                                    &address,
+                                                    inner_ev.clone().unwrap(),
+                                                    inner_cf,
+                                                );
+                                            }
                                         }
                                     }
+
                                 }
                                 None => <EventBus<CM>>::call_replay(
                                     inner_cf,

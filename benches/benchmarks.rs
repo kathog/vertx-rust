@@ -2,13 +2,13 @@
 extern crate test;
 #[macro_use]
 extern crate lazy_static;
-use crossbeam_channel::{bounded, unbounded};
+use crossbeam_channel::{bounded};
 use vertx_rust::vertx::message::{Message, Body};
 extern crate vertx_rust;
 use std::sync::Arc;
 use vertx_rust::vertx::cm::NoClusterManager;
 use vertx_rust::vertx::*;
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, Criterion};
 use criterion_cycles_per_byte::CyclesPerByte;
 
 lazy_static! {

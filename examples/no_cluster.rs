@@ -1,11 +1,7 @@
 #![feature(async_closure)]
-
-use std::sync::Arc;
-use crossbeam_channel::{bounded, RecvError};
-use futures::future;
+use crossbeam_channel::{bounded};
 use hyper::Response;
 use hyper::StatusCode;
-use tokio::runtime::{Handle, Runtime};
 use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
 use vertx_rust::vertx::message::Body;

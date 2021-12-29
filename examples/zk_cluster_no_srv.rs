@@ -1,9 +1,6 @@
-use crossbeam_channel::bounded;
 use vertx_rust::vertx::{Vertx, VertxOptions};
 use vertx_rust::zk::ZookeeperClusterManager;
 use vertx_rust::vertx::message::Body;
-use hyper::StatusCode;
-use hyper::Response;
 
 #[tokio::main]
 async fn main() {

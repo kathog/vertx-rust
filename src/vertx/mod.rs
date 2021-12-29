@@ -689,8 +689,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             body: Arc::new(request),
             ..Default::default()
         };
-        let local_sender = self.sender.lock().clone();
-        local_sender.send(message).unwrap();
+        let local_sender = self.sender.lock();
+        local_sender.send(message);
     }
 
     #[inline]
@@ -703,8 +703,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             publish: true,
             ..Default::default()
         };
-        let local_sender = self.sender.lock().clone();
-        local_sender.send(message).unwrap();
+        let local_sender = self.sender.lock();
+        local_sender.send(message);
     }
 
     #[inline]

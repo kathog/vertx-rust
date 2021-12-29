@@ -21,20 +21,15 @@ lazy_static! {
 
     static ref EVENT_BUS : Arc<EventBus<NoClusterManager>> = {
         let event_bus = RT.block_on(VERTX.event_bus());
-        println!("start event_bus");
         RT.block_on(async {
-            event_bus.local_consumer("test.01", move |m, _| {
+            event_bus.consumer("test.01", move |m, _| {
                 let b = m.body();
-                println!("{:?}", b);
                 let response = format!(
                     r#"{{"health": "{code}"}}"#,
                     code = b.as_i32().unwrap()
                 );
                 m.reply(Body::String(response));
             });
-        });
-        std::thread::spawn(move || {
-            RT.block_on(VERTX.start());
         });
         event_bus
     };
@@ -72,16 +67,20 @@ fn bench(c: &mut Criterion<CyclesPerByte>) {
 fn criterion_vertx(c: &mut Criterion) {
 
     c.bench_function("vertx_request", |b| b.iter(|| {
-        // println!("{:?}", EVENT_BUS.as_ptr());
-        // let _ = reqwest::blocking::get("http://127.0.0.1:9091/").unwrap();
-        // RT.block_on(async {
-            let (tx, rx) = bounded(1);
-            EVENT_BUS.request("test.01", Body::Int(102), move |m, _| {
-                let _ = tx.send(m.body());
-            });
-            let _ = rx.recv().unwrap();
-        // });
+        let (tx, rx) = bounded(1);
+        EVENT_BUS.request("test.01", Body::Int(102), move |m, _| {
+            let _ = tx.send(m.body());
+        });
+        let _ = rx.recv().unwrap();
     }));
+
+    // c.bench_function("vertx_send", |b| b.iter(|| {
+    //     EVENT_BUS.send("test.01", Body::Int(102));
+    // }));
+
+    // c.bench_function("vertx_publish", |b| b.iter(|| {
+    //     EVENT_BUS.publish("test.01", Body::Int(102));
+    // }));
 }
 
 
@@ -92,7 +91,7 @@ fn rt() -> tokio::runtime::Runtime {
         .unwrap()
 }
 
-criterion_group!(benches2, criterion_benchmark);
+criterion_group!(benches2, criterion_benchmark, criterion_vertx);
 
 criterion_group!(
     name = benches;

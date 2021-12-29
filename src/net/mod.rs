@@ -1,4 +1,3 @@
-use std::future::Future;
 use crate::vertx::{cm::ClusterManager, message::Message, EventBus};
 use log::{error, info};
 use std::sync::Arc;

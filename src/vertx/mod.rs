@@ -11,21 +11,15 @@ use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use signal_hook::iterator::Signals;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Once;
 use std::{
     sync::{Arc},
 };
 use tokio::net::TcpStream;
-use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
-use crossbeam_channel::internal::SelectHandle;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use parking_lot::Mutex;
-// use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
-
-static EV_INIT: Once = Once::new();
 
 type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
 type BoxFnMessageImmutable<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
@@ -207,7 +201,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
         let (sender, _): (Sender<Message>, Receiver<Message>) = bounded(1);
         let receiver_joiner = tokio::spawn(async {});
-        let pool_size = options.event_bus_pool_size;
         let ev = EventBus {
             options,
             consumers: Arc::new(HashMap::new()),
@@ -265,7 +258,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     async fn prepare_consumer_msg(
         &mut self,
-        mut receiver: Receiver<Message>,
+        receiver: Receiver<Message>,
         local_consumers: Arc<
             HashMap<String, BoxFnMessage<CM>>,
         >,
@@ -392,7 +385,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                         // }).await;
                     }
                     Err(e) => {
-                        error!("Message not found");
+                        error!("Error: {:?}", e);
                     }
                 }
             }
@@ -533,7 +526,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             Some(caller) => {
                 caller.call((mut_msg, ev));
                 if mut_msg.address.is_some() {
-                    inner_sender.send(mut_msg.clone());
+                    inner_sender.send(mut_msg.clone()).unwrap();
                 }
             }
             None => {
@@ -694,7 +687,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             ..Default::default()
         };
         let local_sender = self.sender.lock();
-        local_sender.send(message);
+        local_sender.send(message).unwrap();
     }
 
     #[inline]
@@ -708,7 +701,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             ..Default::default()
         };
         let local_sender = self.sender.lock();
-        local_sender.send(message);
+        local_sender.send(message).unwrap();
     }
 
     #[inline]
@@ -733,6 +726,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             .lock()
             .insert(message.replay.clone().unwrap(), Box::new(op));
         let local_sender = self.sender.lock();
-        local_sender.send(message);
+        local_sender.send(message).unwrap();
     }
 }

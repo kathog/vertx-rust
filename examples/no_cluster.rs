@@ -1,12 +1,15 @@
-use crossbeam_channel::bounded;
+#![feature(async_closure)]
+use crossbeam_channel::{bounded};
 use hyper::Response;
 use hyper::StatusCode;
 use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
 use vertx_rust::vertx::message::Body;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     pretty_env_logger::init_timed();
+    console_subscriber::init();
 
     let mut vertx_options = VertxOptions::default();
     vertx_options
@@ -14,7 +17,7 @@ fn main() {
         .event_bus_pool_size(32)
         .event_bus_queue_size(1024);
     let vertx: Vertx<NoClusterManager> = Vertx::new(vertx_options);
-    let event_bus = vertx.event_bus();
+    let event_bus = vertx.event_bus().await;
 
     event_bus.consumer("test.01", move |m, _| {
         let b = m.body();
@@ -28,29 +31,32 @@ fn main() {
     net_server.listen(9091, move |_req, ev| {
         let mut resp = vec![];
         let (tx, rx) = bounded(1);
-        ev.request(
-            "test.01",
-            Body::Int(101),
-            move |m, _| {
-                let _ = tx.send(m.body());
-            },
-        );
-        let body = rx.recv().unwrap();
-        let body = body.as_bytes().unwrap();
-        let data = format!(
-            r#"
+            ev.request(
+                "test.01",
+                Body::Int(101),
+                move |m, _| {
+                    let _ = tx.send(m.body());
+                },
+            );
+
+                let body = rx.recv().unwrap();
+                let body = body.as_bytes().unwrap();
+                let data = format!(
+                    r#"
 HTTP/1.1 200 OK
 content-type: application/json
 Date: Sun, 03 May 2020 07:05:15 GMT
 Content-Length: {len}
 
 {json_body}"#,
-            len = body.len(),
-            json_body = String::from_utf8_lossy(body)
-        );
-        resp.extend_from_slice(data.as_bytes());
-        resp
-    });
+                    len = body.len(),
+                    json_body = String::from_utf8_lossy(body)
+                );
+                resp.extend_from_slice(data.as_bytes());
+                resp
+
+
+    }).await;
 
     let mut http_server = vertx.create_http_server();
     http_server
@@ -84,5 +90,5 @@ Content-Length: {len}
                 .unwrap())
         });
 
-    vertx.start();
+    vertx.start().await;
 }

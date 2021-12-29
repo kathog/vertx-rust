@@ -2,113 +2,102 @@
 extern crate test;
 #[macro_use]
 extern crate lazy_static;
-use crossbeam_channel::unbounded;
+use crossbeam_channel::{bounded};
 use vertx_rust::vertx::message::{Message, Body};
 extern crate vertx_rust;
 use std::sync::Arc;
 use vertx_rust::vertx::cm::NoClusterManager;
 use vertx_rust::vertx::*;
-use test::Bencher;
+use criterion::{criterion_group, criterion_main, Criterion};
+use criterion_cycles_per_byte::CyclesPerByte;
 
 lazy_static! {
-    static ref VERTX: Vertx<NoClusterManager> = {
+    static ref RT : tokio::runtime::Runtime = rt();
+
+    static ref VERTX : Vertx<NoClusterManager> = {
         let vertx_options = VertxOptions::default();
-        let vertx = Vertx::<NoClusterManager>::new(vertx_options);
-        vertx
+        RT.block_on(async {Vertx::new(vertx_options)})
     };
-    static ref EB: Arc<EventBus<NoClusterManager>> = VERTX.event_bus();
-}
 
-#[bench]
-fn vertx_request(b: &mut test::Bencher) {
-    EB.local_consumer("test.01", move |m, _| {
-        let b = m.body();
-        let response = format!(
-            r#"{{"health": "{code}"}}"#,
-            code = b.as_string().unwrap()
-        );
-        m.reply(Body::String(response));
-    });
-
-    b.iter(|| {
-        let (tx, rx) = unbounded();
-        EB.request("test.01", Body::String("UP".to_string()), move |m, _| {
-            let _body = m.body();
-            let _ = tx.send(1);
+    static ref EVENT_BUS : Arc<EventBus<NoClusterManager>> = {
+        let event_bus = RT.block_on(VERTX.event_bus());
+        RT.block_on(async {
+            event_bus.local_consumer("test.01", move |m, _| {
+                let b = m.body();
+                let response = format!(
+                    r#"{{"health": "{code}"}}"#,
+                    code = b.as_i32().unwrap()
+                );
+                m.reply(Body::String(response));
+            });
         });
-        let _ = rx.recv();
-    });
+        event_bus
+    };
 }
 
-#[bench]
-fn vertx_send(b: &mut test::Bencher) {
-    EB.local_consumer("test.01", move |m, _| {
-        let b = m.body();
-        let response = format!(
-            r#"{{"health": "{code}"}}"#,
-            code = b.as_string().unwrap()
-        );
-        m.reply(Body::String(response));
-    });
 
-    b.iter(|| {
-        EB.send("test.01", Body::String("UP".to_string()));
-    });
-}
-
-#[bench]
-fn vertx_publish(b: &mut test::Bencher) {
-    EB.local_consumer("test.01", move |m, _| {
-        let b = m.body();
-        let response = format!(
-            r#"{{"health": "{code}"}}"#,
-            code = b.as_string().unwrap()
-        );
-        m.reply(Body::String(response));
-    });
-
-    b.iter(|| {
-        EB.publish("test.01", Body::String("UP".to_string()));
-    });
-}
-
-#[bench]
-fn serialize_message(b: &mut test::Bencher) {
-    let m = Message::generate();
-
-    b.iter(|| m.to_vec().unwrap());
-}
-
-#[bench]
-fn deserialize_message(b: &mut test::Bencher) {
+fn criterion_benchmark(c: &mut Criterion) {
     let m = Message::generate();
     let bytes = m.to_vec().unwrap()[4..].to_vec();
+    c.bench_function("serialize_message", |b| b.iter(|| {
+        m.to_vec().unwrap();
+    }
+    ));
+    c.bench_function("deserialize_message", |b| b.iter(|| {
+            let _ = Message::from(bytes.clone());
+        }
+    ));
 
-    b.iter(|| {
-        let _ = Message::from(bytes.clone());
-    });
 }
 
-#[bench]
-fn unbounded_crossbeam_uncontended(b: &mut Bencher) {
-    let (tx, rx) = crossbeam_channel::unbounded();
-    b.iter(|| {
-
-            let m = Message::generate();
-            let _ = tx.send(m);
-
-            let _ = rx.recv();
-    })
+fn bench(c: &mut Criterion<CyclesPerByte>) {
+    let m = Message::generate();
+    let bytes = m.to_vec().unwrap()[4..].to_vec();
+    c.bench_function("serialize_cycles", |b| b.iter(|| {
+            m.to_vec().unwrap();
+        }
+    ));
+    c.bench_function("deserialize_cycles", |b| b.iter(|| {
+            let _ = Message::from(bytes.clone());
+        }
+    ));
 }
 
-#[bench]
-fn unbounded_std(b: &mut Bencher) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    b.iter(|| {
 
-        let m = Message::generate();
-        let _ = tx.send(m);
+fn criterion_vertx(c: &mut Criterion) {
 
-        let _ = rx.recv();
-    })
+    c.bench_function("vertx_request", |b| b.iter(|| {
+        let (tx, rx) = bounded(1);
+        EVENT_BUS.request("test.01", Body::Int(102), move |m, _| {
+            let _ = tx.send(m.body());
+        });
+        let _ = rx.recv().unwrap();
+    }));
+
+    c.bench_function("vertx_send", |b| b.iter(|| {
+        EVENT_BUS.send("test.01", Body::Int(102));
+    }));
+
+    c.bench_function("vertx_publish", |b| b.iter(|| {
+        EVENT_BUS.publish("test.01", Body::Int(102));
+    }));
 }
+
+
+fn rt() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+criterion_group!(benches2, criterion_benchmark, criterion_vertx);
+
+criterion_group!(
+    name = benches;
+    config = Criterion::default().with_measurement(CyclesPerByte);
+    targets = bench
+);
+
+
+criterion_main!(benches, benches2);

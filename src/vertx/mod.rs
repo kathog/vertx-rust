@@ -305,7 +305,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                             &address,
                                             inner_ev.clone().unwrap(),
                                             inner_cf,
-                                        ).await;
+                                        );
                                         return;
                                     }
                                     // invoke function from consumer
@@ -377,7 +377,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                 &address,
                                                 inner_ev.clone().unwrap(),
                                                 inner_cf,
-                                            ).await;
+                                            );
                                         }
                                     }
                                 }
@@ -477,7 +477,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 &address,
                 inner_ev.clone().unwrap(),
                 inner_cf,
-            ).await
+            )
         } else {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
@@ -514,7 +514,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    async fn call_local_func(
+    fn call_local_func(
         inner_consummers: &Arc<
             HashMap<String, BoxFnMessage<CM>>,
         >,
@@ -530,7 +530,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         match callback {
             Some(caller) => {
                 caller.call((mut_msg, ev));
-                inner_sender.send(mut_msg.clone());
+                if mut_msg.address.is_some() {
+                    inner_sender.send(mut_msg.clone());
+                }
             }
             None => {
                 let mut map = inner_cf.lock();

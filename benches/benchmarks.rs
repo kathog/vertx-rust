@@ -74,13 +74,13 @@ fn criterion_vertx(c: &mut Criterion) {
         let _ = rx.recv().unwrap();
     }));
 
-    // c.bench_function("vertx_send", |b| b.iter(|| {
-    //     EVENT_BUS.send("test.01", Body::Int(102));
-    // }));
+    c.bench_function("vertx_send", |b| b.iter(|| {
+        EVENT_BUS.send("test.01", Body::Int(102));
+    }));
 
-    // c.bench_function("vertx_publish", |b| b.iter(|| {
-    //     EVENT_BUS.publish("test.01", Body::Int(102));
-    // }));
+    c.bench_function("vertx_publish", |b| b.iter(|| {
+        EVENT_BUS.publish("test.01", Body::Int(102));
+    }));
 }
 
 

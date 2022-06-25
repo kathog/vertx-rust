@@ -1,5 +1,5 @@
 [target.x86_64-unknown-linux-gnu]
-linker = "clang"
+#linker = "clang"
 #rustflags = "--emit=llvm-ir -Cprofile-generate=/tmp/profdata"
 #rustflags = "--emit=llvm-ir -Cprofile-use=/tmp/profdata/default_10333841583407098689_0.profraw"
 rustflags = "-Ctarget-cpu=native --emit=llvm-ir --cfg tokio_unstable"

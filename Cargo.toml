@@ -1,8 +1,8 @@
 [package]
 name = "vertx-rust"
-version = "0.3.0"
+version = "0.4.1"
 authors = ["Daniel Lewiński <nerull@craftsoft.eu>"]
-edition = "2018"
+edition = "2021"
 description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
 license-file = "LICENSE"
 homepage = "https://github.com/kathog/vertx-rust"
@@ -41,13 +41,13 @@ crossbeam-channel = "0.5"
 hyper = {version = "0.14", features = ["full"] }
 signal-hook = "0.3"
 parking_lot = { version = "*", features = ["nightly"] }
-console-subscriber = "0.1"
 
 [dev-dependencies]
 pretty_env_logger = "0.4"
 criterion = { version = "0.3.5", features = ["async"]}
 criterion-cycles-per-byte = "0.1"
 iai = "0.1"
+console-subscriber = "0.1"
 
 [[bench]]
 #path = "benches/iai_benchmarks.rs"

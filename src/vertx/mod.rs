@@ -17,6 +17,7 @@ use std::{
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
+use std::process::exit;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
@@ -151,8 +152,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
         let event_bus = self.event_bus.clone();
         tokio::spawn(async move {
             let sig = signals.forever().next();
-            info!("received signal {:?}", sig);
-            event_bus.stop().await;
+            info!("Stopping vertx with signal: {:?}", sig.unwrap());
+            drop(event_bus.sender.data_ptr());
+            exit(sig.unwrap());
         });
         self.event_bus.start().await;
     }
@@ -177,8 +179,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
         self.event_bus.clone()
     }
 
-    pub fn stop(&self) {
-        self.event_bus.stop();
+    pub async fn stop(&self) {
+        self.event_bus.stop().await;
     }
 }
 
@@ -274,7 +276,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let joiner = tokio::spawn(async move {
             loop {
                 if !DO_INVOKE.load(Ordering::Relaxed) {
-                    return
+                    return;
                 }
                 match receiver.recv() {
                     Ok(msg) => {

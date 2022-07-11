@@ -6,7 +6,7 @@ use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::message::Body;
 use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 12)]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     pretty_env_logger::init_timed();
     console_subscriber::init();

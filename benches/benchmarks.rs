@@ -93,11 +93,11 @@ fn rt() -> tokio::runtime::Runtime {
 
 criterion_group!(benches2, criterion_benchmark, criterion_vertx);
 
-criterion_group!(
-    name = benches;
-    config = Criterion::default().with_measurement(CyclesPerByte);
-    targets = bench
-);
+// criterion_group!(
+//     name = benches;
+//     config = Criterion::default().with_measurement(CyclesPerByte);
+//     targets = bench
+// );
 
 
-criterion_main!(benches, benches2);
+// criterion_main!(benches, benches2);

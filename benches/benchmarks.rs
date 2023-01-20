@@ -9,7 +9,7 @@ use std::sync::Arc;
 use vertx_rust::vertx::cm::NoClusterManager;
 use vertx_rust::vertx::*;
 use criterion::{criterion_group, criterion_main, Criterion};
-use criterion_cycles_per_byte::CyclesPerByte;
+// use criterion_cycles_per_byte::CyclesPerByte;
 
 lazy_static! {
     static ref RT : tokio::runtime::Runtime = rt();
@@ -100,4 +100,4 @@ criterion_group!(benches2, criterion_benchmark, criterion_vertx);
 // );
 
 
-// criterion_main!(benches, benches2);
+criterion_main!( benches2);

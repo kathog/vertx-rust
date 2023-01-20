@@ -50,18 +50,18 @@ fn criterion_benchmark(c: &mut Criterion) {
 
 }
 
-fn bench(c: &mut Criterion<CyclesPerByte>) {
-    let m = Message::generate();
-    let bytes = m.to_vec().unwrap()[4..].to_vec();
-    c.bench_function("serialize_cycles", |b| b.iter(|| {
-            m.to_vec().unwrap();
-        }
-    ));
-    c.bench_function("deserialize_cycles", |b| b.iter(|| {
-            let _ = Message::from(bytes.clone());
-        }
-    ));
-}
+// fn bench(c: &mut Criterion<CyclesPerByte>) {
+//     let m = Message::generate();
+//     let bytes = m.to_vec().unwrap()[4..].to_vec();
+//     c.bench_function("serialize_cycles", |b| b.iter(|| {
+//             m.to_vec().unwrap();
+//         }
+//     ));
+//     c.bench_function("deserialize_cycles", |b| b.iter(|| {
+//             let _ = Message::from(bytes.clone());
+//         }
+//     ));
+// }
 
 
 fn criterion_vertx(c: &mut Criterion) {

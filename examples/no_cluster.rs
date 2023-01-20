@@ -24,7 +24,7 @@ async fn main() {
         let response = format!(r#"{{"health": "{code}"}}"#, code = b.as_i32().unwrap());
         m.reply(Body::ByteArray(response.into_bytes()));
     });
-    let net_server = vertx.create_net_server();
+    let net_server = vertx.create_net_server().await;
     net_server
         .listen(9091, move |_req, ev| {
             let mut resp = vec![];
@@ -51,7 +51,7 @@ Content-Length: {len}
         })
         .await;
 
-    let mut http_server = vertx.create_http_server();
+    let mut http_server = vertx.create_http_server().await;
     http_server
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);

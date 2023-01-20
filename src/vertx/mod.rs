@@ -159,11 +159,13 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
         self.event_bus.start().await;
     }
 
-    pub fn create_http_server(&self) -> HttpServer<CM> {
+    pub async fn create_http_server(&self) -> HttpServer<CM> {
+        let _ = self.event_bus().await;
         HttpServer::new(Some(self.event_bus.clone()))
     }
 
-    pub fn create_net_server(&self) -> &'static mut NetServer<CM> {
+    pub async fn create_net_server(&self) -> &'static mut NetServer<CM> {
+        let _ = self.event_bus().await;
         NetServer::new(Some(self.event_bus.clone()))
     }
 

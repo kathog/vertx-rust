@@ -24,7 +24,7 @@ async fn main() {
         m.reply(Body::String(response));
     });
 
-    let mut http_server = vertx.create_http_server();
+    let mut http_server = vertx.create_http_server().await;
     http_server
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);

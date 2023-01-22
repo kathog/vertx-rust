@@ -1,6 +1,6 @@
 [package]
 name = "vertx-rust"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Daniel Lewiński <nerull@craftsoft.eu>"]
 edition = "2021"
 description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
@@ -41,6 +41,8 @@ crossbeam-channel = "0.5"
 hyper = {version = "0.14", features = ["full"] }
 signal-hook = "0.3"
 parking_lot = { version = "0.12", features = ["nightly"] }
+url = "2.3"
+regex = "1.7"
 
 [dev-dependencies]
 pretty_env_logger = "0.4"

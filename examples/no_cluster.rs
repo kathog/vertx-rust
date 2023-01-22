@@ -66,6 +66,13 @@ Content-Length: {len}
                 .body(body.clone().into())
                 .unwrap())
         })
+        .get("/api/v1/:name", move |_req, _| {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(b"{\"health\": \"104\"}".to_vec().into())
+                .unwrap())
+        })
         .post("/", move |req, _| {
             let body = req.into_body();
             let body = WebClient::blocking_body(body).unwrap();
@@ -76,12 +83,7 @@ Content-Length: {len}
                 .body(body.into())
                 .unwrap())
         })
-        .listen_with_default(9092, move |_, _| {
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body("NIMA".as_bytes().into())
-                .unwrap())
-        });
+        .listen(9092);
 
     vertx.start().await;
 }

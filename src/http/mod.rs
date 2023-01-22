@@ -12,6 +12,7 @@ use log::info;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use regex::Regex;
 use tokio::runtime::{Builder, Runtime};
 
 pub struct HttpServer<CM: 'static + ClusterManager + Send + Sync> {
@@ -28,7 +29,9 @@ pub struct HttpServer<CM: 'static + ClusterManager + Send + Sync> {
             >,
         >,
     >,
+    regexes: Arc<HashMap<String, Regex>>,
     rt: Runtime,
+    main_reg: Regex,
 }
 
 impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
@@ -37,6 +40,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
             port: 0,
             event_bus,
             callers: Arc::new(HashMap::new()),
+            regexes: Arc::new(HashMap::new()),
+            main_reg: Regex::new("(:\\w+)").unwrap(),
             rt: Builder::new_multi_thread()
                 .worker_threads(12)
                 .enable_all()
@@ -143,7 +148,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
             + Sync,
     {
         let callers = Arc::get_mut(&mut self.callers).unwrap();
-        callers.insert((path.to_owned(), method), Arc::new(op));
+        let reg_path = self.main_reg.replace_all(path, "(\\w+)");
+        callers.insert((reg_path.to_string(), method), Arc::new(op));
+
+        let regexes = Arc::get_mut(&mut self.regexes).unwrap();
+        regexes.insert(reg_path.to_string(), Regex::new(&reg_path).unwrap());
 
         self
     }
@@ -169,7 +178,6 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                     let callers = callers.clone();
                     async move {
                         let ev = ev.to_owned();
-                        let callers = callers.to_owned();
                         let op = callers.get(&(req.uri().path().to_owned(), req.method().clone()));
                         match op {
                             Some(op) => {
@@ -199,18 +207,27 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
         let ev = self.event_bus.as_ref().unwrap().clone();
 
         let callers = self.callers.clone();
+        let regexes = self.regexes.clone();
         let addr = SocketAddr::from(([0, 0, 0, 0], port));
         let new_service = make_service_fn(move |_conn: &AddrStream| {
             let ev = ev.clone();
             let callers = callers.clone();
+            let regexes = regexes.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                     let ev = ev.clone();
                     let callers = callers.clone();
+                    let regexes = regexes.clone();
                     async move {
                         let ev = ev.to_owned();
-                        let callers = callers.to_owned();
-                        let op = callers.get(&(req.uri().path().to_owned(), req.method().clone()));
+                        let path = req.uri().path().to_owned();
+                        let mut path_key = &path;
+                        for (k, v) in regexes.iter() {
+                            if v.is_match(&path) {
+                                path_key = k;
+                            }
+                        }
+                        let op = callers.get(&(path_key.to_owned(), req.method().clone()));
                         <HttpServer<CM>>::invoke_function(req, ev, op)
                     }
                 }))

@@ -1,7 +1,7 @@
 [package]
 name = "vertx-rust"
-version = "0.4.2"
-authors = ["Daniel Lewiński <nerull@craftsoft.eu>"]
+version = "0.4.3"
+authors = ["Daniel Lewiński <nerull@szwadron.net>"]
 edition = "2021"
 description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
 license-file = "LICENSE"

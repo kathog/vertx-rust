@@ -225,6 +225,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                         for (k, v) in regexes.iter() {
                             if v.is_match(&path) {
                                 path_key = k;
+                                break;
                             }
                         }
                         let op = callers.get(&(path_key.to_owned(), req.method().clone()));

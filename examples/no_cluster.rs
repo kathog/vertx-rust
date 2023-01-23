@@ -53,7 +53,7 @@ Content-Length: {len}
 
     let mut http_server = vertx.create_http_server().await;
     http_server
-        .get("/api/v1/:name", move |req, _| {
+        .get("/api/v1/:name/:value", move |req, _| {
             println!("{:?}", req.paths);
             Ok(Response::builder()
                 .status(StatusCode::OK)

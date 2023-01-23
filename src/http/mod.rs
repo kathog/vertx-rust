@@ -239,13 +239,16 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                                 let caps_base = v.0.captures_iter(&v.1);
                                 let caps : Vec<Captures> = v.0.captures_iter(&path).collect();
                                 for (i, c) in caps_base.enumerate() {
-                                    if let Some(name) = c.get(1) {
-                                        if let Some(value) = caps[i].get(1) {
-                                            let _ = paths.insert(name.as_str().to_string(),
-                                                                 value.as_str().to_string()
-                                            );
+                                    for idx in 1..c.len() {
+                                        if let Some(name) = c.get(idx) {
+                                            if let Some(value) = caps[i].get(idx) {
+                                                let _ = paths.insert(name.as_str().to_string(),
+                                                                     value.as_str().to_string()
+                                                );
+                                            }
                                         }
                                     }
+
                                 }
                                 break;
                             }

@@ -53,6 +53,14 @@ Content-Length: {len}
 
     let mut http_server = vertx.create_http_server().await;
     http_server
+        .get("/api/v1/:name", move |req, _| {
+            println!("{:?}", req.paths);
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(b"{\"health\": \"104\"}".to_vec().into())
+                .unwrap())
+        })
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);
             ev.request("test.01", Body::Int(102), move |m, _| {
@@ -66,15 +74,9 @@ Content-Length: {len}
                 .body(body.clone().into())
                 .unwrap())
         })
-        .get("/api/v1/:name", move |_req, _| {
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(b"{\"health\": \"104\"}".to_vec().into())
-                .unwrap())
-        })
+
         .post("/", move |req, _| {
-            let body = req.into_body();
+            let body = req.request.into_body();
             let body = WebClient::blocking_body(body).unwrap();
 
             Ok(Response::builder()

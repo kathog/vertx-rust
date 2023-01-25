@@ -23,12 +23,14 @@ lazy_static! {
         let event_bus = RT.block_on(VERTX.event_bus());
         RT.block_on(async {
             event_bus.local_consumer("test.01", move |m, _| {
-                let b = m.body();
-                let response = format!(
-                    r#"{{"health": "{code}"}}"#,
-                    code = b.as_i32().unwrap()
-                );
-                m.reply(Body::String(response));
+                Box::pin(async {
+                    let b = m.body();
+                    let response = format!(
+                        r#"{{"health": "{code}"}}"#,
+                        code = b.as_i32().unwrap()
+                    );
+                    m.reply(Body::String(response));
+                })
             });
         });
         event_bus

@@ -694,7 +694,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         net_server
     }
 
-    pub fn consumer_local<OP>(&self, address: &str, op: OP)
+    pub fn local_consumer<OP>(&self, address: &str, op: OP)
         where
             OP: Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync,
     {

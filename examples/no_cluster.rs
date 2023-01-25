@@ -33,7 +33,7 @@ async fn main() {
     let vertx: Vertx<NoClusterManager> = Vertx::new(vertx_options);
     let event_bus = vertx.event_bus().await;
 
-    event_bus.consumer_local("test.01", invoke_test1);
+    event_bus.local_consumer("test.01", invoke_test1);
     let net_server = vertx.create_net_server().await;
     net_server
         .listen(9091, move |_req, ev| {

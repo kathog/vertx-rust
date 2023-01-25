@@ -17,13 +17,16 @@ use std::{
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::process::exit;
 use crossbeam_channel::{bounded, Receiver, Sender};
+use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 
 type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
 type BoxFnMessageImmutable<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
+type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync>>;
 
 lazy_static! {
     static ref TCPS: Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
@@ -189,8 +192,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     options: EventBusOptions,
     consumers: Arc<HashMap<String, BoxFnMessage<CM>>>,
-    local_consumers:
-        Arc<HashMap<String, BoxFnMessage<CM>>>,
+    consumers_async: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
+    // local_consumers:
+    //     Arc<HashMap<String, BoxFnMessage<CM>>>,
     callback_functions:
         Arc<Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>>,
     pub(crate) sender: Mutex<Sender<Message>>,
@@ -208,7 +212,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let ev = EventBus {
             options,
             consumers: Arc::new(HashMap::new()),
-            local_consumers: Arc::new(HashMap::new()),
+            consumers_async: Arc::new(HashMap::new()),
+            // local_consumers: Arc::new(HashMap::new()),
             callback_functions: Arc::new(Mutex::new(HashMap::new())),
             sender: Mutex::new(sender),
             receiver_joiner: Arc::new(receiver_joiner),
@@ -273,7 +278,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     ) {
         let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
-        let local_local_consumers = self.local_consumers.clone();
+        // let local_local_consumers = self.local_consumers.clone();
+        let local_local_consumers = self.consumers_async.clone();
 
         let joiner = tokio::spawn(async move {
             loop {
@@ -295,14 +301,14 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                             match mut_msg.address.clone() {
                                 Some(address) => {
                                     if inner_local_consumers.contains_key(&address) {
-                                        <EventBus<CM>>::call_local_func(
+                                        <EventBus<CM>>::call_local_async(
                                             &inner_local_consumers,
                                             &inner_sender,
                                             &mut mut_msg,
                                             &address,
                                             inner_ev.clone().unwrap(),
                                             inner_cf,
-                                        );
+                                        ).await;
                                         // return;
                                     } else {
                                         // invoke function from consumer
@@ -528,7 +534,40 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let callback = inner_consummers.get(&address.to_string());
         match callback {
             Some(caller) => {
-                caller.call((mut_msg, ev));
+                caller(mut_msg, ev);
+                if mut_msg.address.is_some() {
+                    inner_sender.send(mut_msg.clone()).unwrap();
+                }
+            }
+            None => {
+                let mut map = inner_cf.lock();
+                let callback = map.remove(address);
+                if let Some(caller) = callback {
+                    let msg = mut_msg.clone();
+                    caller.call((&msg, ev));
+                }
+            }
+        }
+    }
+
+    #[inline]
+    async fn call_local_async(
+        inner_consummers: &Arc<
+            HashMap<String, PinBoxFnMessage<CM>>,
+        >,
+        inner_sender: &Sender<Message>,
+        mut_msg: &mut Message,
+        address: &str,
+        ev: Arc<EventBus<CM>>,
+        inner_cf: Arc<
+            Mutex<HashMap<String, BoxFnMessageImmutable<CM>>>,
+        >,
+    ) {
+        let callback = inner_consummers.get(&address.to_string());
+        match callback {
+            Some(caller) => {
+
+                caller(mut_msg, ev).await;
                 if mut_msg.address.is_some() {
                     inner_sender.send(mut_msg.clone()).unwrap();
                 }
@@ -655,6 +694,17 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         net_server
     }
 
+    pub fn consumer_local<OP>(&self, address: &str, op: OP)
+        where
+            OP: Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync,
+    {
+        let local_op = Box::pin(op);
+        unsafe {
+            let mut local_cons = self.consumers_async.clone();
+            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), local_op);
+        }
+    }
+
     pub fn consumer<OP>(&self, address: &str, op: OP)
     where
         OP: Fn(&mut Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
@@ -671,15 +721,15 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         };
     }
 
-    pub fn local_consumer<OP>(&self, address: &str, op: OP)
-    where
-        OP: Fn(&mut Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
-    {
-        unsafe {
-            let mut local_cons = self.local_consumers.clone();
-            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::new(op));
-        }
-    }
+    // pub fn local_consumer<OP>(&self, address: &str, op: OP)
+    // where
+    //     OP: Fn(&mut Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
+    // {
+    //     unsafe {
+    //         let mut local_cons = self.local_consumers.clone();
+    //         Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::new(op));
+    //     }
+    // }
 
     #[inline]
     pub fn send(&self, address: &str, request: Body) {

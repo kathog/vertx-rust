@@ -1,10 +1,24 @@
 #![feature(async_closure)]
+
+use std::sync::Arc;
 use crossbeam_channel::bounded;
+use futures::future::{BoxFuture};
 use hyper::Response;
 use hyper::StatusCode;
 use vertx_rust::http::client::WebClient;
-use vertx_rust::vertx::message::Body;
-use vertx_rust::vertx::{cm::NoClusterManager, Vertx, VertxOptions};
+use vertx_rust::vertx::message::{Body, Message};
+use vertx_rust::vertx::{cm::NoClusterManager, EventBus, Vertx, VertxOptions};
+
+fn invoke_test1 (m: &mut Message, _: Arc<EventBus<NoClusterManager>>) -> BoxFuture<()>{
+    let b = m.body();
+    let response = format!(r#"{{"health": "{code}"}}"#, code = b.as_i32().unwrap());
+
+    Box::pin(async {
+        // async body
+        m.reply(Body::ByteArray(response.into_bytes()));
+    })
+}
+
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -19,11 +33,7 @@ async fn main() {
     let vertx: Vertx<NoClusterManager> = Vertx::new(vertx_options);
     let event_bus = vertx.event_bus().await;
 
-    event_bus.consumer("test.01", move |m, _| {
-        let b = m.body();
-        let response = format!(r#"{{"health": "{code}"}}"#, code = b.as_i32().unwrap());
-        m.reply(Body::ByteArray(response.into_bytes()));
-    });
+    event_bus.consumer_local("test.01", invoke_test1);
     let net_server = vertx.create_net_server().await;
     net_server
         .listen(9091, move |_req, ev| {

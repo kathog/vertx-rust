@@ -14,11 +14,13 @@ async fn main() {
 
     event_bus.consumer("test.01", move |m, _| {
         let body = m.body();
-        let response = format!(
-            r#"{{"health": "{code}"}}"#,
-            code = body.as_string().unwrap()
-        );
-        m.reply(Body::String(response));
+        Box::pin(async move {
+            let response = format!(
+                r#"{{"health": "{code}"}}"#,
+                code = body.as_string().unwrap()
+            );
+            m.reply(Body::String(response));
+        })
     });
 
     vertx.start().await;

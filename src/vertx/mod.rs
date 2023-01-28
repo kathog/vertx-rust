@@ -25,7 +25,7 @@ use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 
-type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
+// type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
 type BoxFnMessageImmutable<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
 type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync>>;
 
@@ -192,7 +192,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 
 pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     options: EventBusOptions,
-    consumers: Arc<HashMap<String, BoxFnMessage<CM>>>,
+    consumers: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
     consumers_async: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
     // local_consumers:
     //     Arc<HashMap<String, BoxFnMessage<CM>>>,
@@ -270,7 +270,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         &mut self,
         receiver: Receiver<Message>,
         local_consumers: Arc<
-            HashMap<String, BoxFnMessage<CM>>,
+            HashMap<String, PinBoxFnMessage<CM>>,
         >,
         local_cf: Arc<
             DashMap<String, BoxFnMessageImmutable<CM>>,
@@ -380,7 +380,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                     &address,
                                                     inner_ev.clone().unwrap(),
                                                     inner_cf,
-                                                );
+                                                ).await;
                                             }
                                         }
                                     }
@@ -406,7 +406,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     async fn send_message(
         inner_consummers: &Arc<
-            HashMap<String, BoxFnMessage<CM>>,
+            HashMap<String, PinBoxFnMessage<CM>>,
         >,
         inner_sender: &Sender<Message>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
@@ -458,7 +458,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     async fn send_to_node(
         inner_consummers: &&Arc<
-            HashMap<String, BoxFnMessage<CM>>,
+            HashMap<String, PinBoxFnMessage<CM>>,
         >,
         inner_sender: &&Sender<Message>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
@@ -482,7 +482,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 &address,
                 inner_ev.clone().unwrap(),
                 inner_cf,
-            )
+            ).await
         } else {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
@@ -519,9 +519,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    fn call_local_func(
+    async fn call_local_func(
         inner_consummers: &Arc<
-            HashMap<String, BoxFnMessage<CM>>,
+            HashMap<String, PinBoxFnMessage<CM>>,
         >,
         inner_sender: &Sender<Message>,
         mut_msg: &mut Message,
@@ -534,7 +534,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let callback = inner_consummers.get(&address.to_string());
         match callback {
             Some(caller) => {
-                caller(mut_msg, ev);
+                caller(mut_msg, ev).await;
                 if mut_msg.address.is_some() {
                     inner_sender.send(mut_msg.clone()).unwrap();
                 }
@@ -706,11 +706,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     pub fn consumer<OP>(&self, address: &str, op: OP)
     where
-        OP: Fn(&mut Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
+        OP: Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync,
     {
         unsafe {
             let mut local_cons = self.consumers.clone();
-            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::new(op));
+            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::pin(op));
         }
         match self.cluster_manager.as_ref() {
             Some(cm) => {

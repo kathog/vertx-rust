@@ -105,7 +105,9 @@ let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
 let event_bus = vertx.event_bus().await;
 
 event_bus.consumer("test.01", move |m, _| {
-  m.reply(..);
+  Box::pin( async {
+    m.reply(..);
+  })
 });
 
 vertx.start().await;

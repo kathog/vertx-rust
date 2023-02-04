@@ -1,23 +1,79 @@
-#[cfg(feature = "client")]
-pub mod client;
-
-use crate::vertx::{cm::ClusterManager, EventBus};
-use hashbrown::HashMap;
-use hyper::http::Error;
-use hyper::server::conn::AddrStream;
-use hyper::server::Server;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Response, StatusCode};
-use log::info;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use chrono::{DateTime, Local};
+use hashbrown::hash_map::{Iter};
+use hashbrown::HashMap;
+use hyper::{Body, HeaderMap, Method, Response, StatusCode, Uri, Version};
+use hyper::header::HeaderValue;
+use hyper::http::{Error, Extensions};
+use hyper::server::conn::AddrStream;
+use hyper::server::Server;
+use hyper::service::{make_service_fn, service_fn};
+use log::info;
 use regex::{Captures, Regex};
 use tokio::runtime::{Builder, Runtime};
 
+use crate::vertx::{cm::ClusterManager, EventBus};
+
+#[cfg(feature = "client")]
+pub mod client;
+
+
 pub struct Request {
-    pub request: hyper::Request<Body>,
-    pub paths: HashMap<String, String>
+    pub(crate) request: hyper::Request<Body>,
+    pub(crate) paths: HashMap<String, String>,
+    pub request_timestamp: DateTime<Local>
+}
+
+impl Request {
+
+    #[inline]
+    pub fn path_value (&self, key: &str) -> Option<&String> {
+        self.paths.get(key)
+    }
+
+    #[inline]
+    pub fn path_iter (&self) -> Iter<String, String> {
+        self.paths.iter()
+    }
+
+    #[inline]
+    pub fn into_body (self) -> Body {
+        self.request.into_body()
+    }
+
+    #[inline]
+    pub fn method(&self) -> &Method {
+        &self.request.method()
+    }
+
+    #[inline]
+    pub fn uri(&self) -> &Uri {
+        &self.request.uri()
+    }
+
+    #[inline]
+    pub fn version(&self) -> Version {
+        self.request.version()
+    }
+
+    #[inline]
+    pub fn headers(&self) -> &HeaderMap<HeaderValue> {
+        &self.request.headers()
+    }
+
+    #[inline]
+    pub fn extensions(&self) -> &Extensions {
+        &self.request.extensions()
+    }
+
+    #[inline]
+    pub fn body(&self) -> &Body {
+        &self.request.body()
+    }
+
 }
 
 pub struct HttpServer<CM: 'static + ClusterManager + Send + Sync> {
@@ -187,7 +243,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                         let op = callers.get(&(req.uri().path().to_owned(), req.method().clone()));
                         let request = Request {
                             request: req,
-                            paths: Default::default()
+                            paths: Default::default(),
+                            request_timestamp: Local::now()
                         };
                         match op {
                             Some(op) => {
@@ -256,7 +313,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                         let op = callers.get(&(path_key.to_owned(), req.method().clone()));
                         let request = Request {
                             request: req,
-                            paths
+                            paths,
+                            request_timestamp: Local::now()
                         };
                         <HttpServer<CM>>::invoke_function(request, ev, op)
                     }

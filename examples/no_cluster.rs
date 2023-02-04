@@ -64,7 +64,7 @@ Content-Length: {len}
     let mut http_server = vertx.create_http_server().await;
     http_server
         .get("/api/v1/:name/:value", move |req, _| {
-            println!("{:?}", req.paths);
+            println!("{:?}", req.path_iter());
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
@@ -86,7 +86,7 @@ Content-Length: {len}
         })
 
         .post("/", move |req, _| {
-            let body = req.request.into_body();
+            let body = req.into_body();
             let body = WebClient::blocking_body(body).unwrap();
 
             Ok(Response::builder()

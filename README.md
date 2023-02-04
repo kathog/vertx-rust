@@ -25,7 +25,7 @@ Currently, the only implementation is the cluster version based on zookeeper as 
 
 # Benchmarks
 
-Benchmarks on Dell G3 with Intel Core i7-8750H
+Benchmarks on AMD Ryzen 7 3800X
 
 ## Wrk benchmarks
 
@@ -35,11 +35,11 @@ wrk -d 90s -t 5 -c 500 http://127.0.0.1:9092/
 Running 2m test @ http://127.0.0.1:9092/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.56ms    1.87ms  39.83ms   82.74%
-    Req/Sec    40.29k     4.66k   63.80k    70.89%
-  18022166 requests in 1.50m, 2.08GB read
-Requests/sec: 200034.56
-Transfer/sec:     23.66MB
+    Latency     1.36ms  715.49us  26.70ms   70.35%
+    Req/Sec    74.64k     8.17k   92.34k    59.76%
+  33426081 requests in 1.50m, 3.89GB read
+Requests/sec: 371207.38
+Transfer/sec:     44.25MB
 ```
 Tcp server from **no_cluster** example:
 ```
@@ -47,35 +47,49 @@ wrk -d 90s -t 5 -c 500 http://127.0.0.1:9091/
 Running 2m test @ http://127.0.0.1:9091/
   5 threads and 500 connections
   Thread Stats   Avg      Stdev     Max   +/- Stdev
-    Latency     2.47ms    3.20ms  99.24ms   91.42%
-    Req/Sec    50.67k     9.84k  105.72k    75.66%
-  22653909 requests in 1.50m, 2.53GB read
-Requests/sec: 251512.38
-Transfer/sec:     28.78MB
+    Latency     1.45ms  768.63us  11.52ms   70.22%
+    Req/Sec    70.55k     8.68k    103.19k    75.66%
+  31591444 requests in 1.50m, 3.56GB read
+Requests/sec: 350878.94
+Transfer/sec:     40.49MB
 ```
 
 ## Microbenchmarks
 ```
-vertx_request           time:   [8.1251 us 8.1982 us 8.2809 us]                           
+serialize_cycles        time:   [260.7716 cycles 261.2144 cycles 261.6987 cycles]           
 Found 7 outliers among 100 measurements (7.00%)
-  5 (5.00%) high mild
-  2 (2.00%) high severe
-
-vertx_send              time:   [1.4308 us 1.4435 us 1.4594 us]                        
-Found 8 outliers among 100 measurements (8.00%)
-  3 (3.00%) low severe
-  2 (2.00%) low mild
+  1 (1.00%) low mild
+  3 (3.00%) high mild
   3 (3.00%) high severe
 
-vertx_publish           time:   [1.8024 us 1.8305 us 1.8527 us]                           
+deserialize_cycles      time:   [325.4613 cycles 325.8329 cycles 326.2337 cycles]             
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) high mild
+  2 (2.00%) high severe
 
-serialize_message       time:   [203.27 ns 203.72 ns 204.20 ns]                              
+serialize_message       time:   [66.672 ns 67.425 ns 68.939 ns]                              
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+deserialize_message     time:   [70.224 ns 70.403 ns 70.592 ns]                                
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) high mild
+  2 (2.00%) high severe
+
+vertx_request           time:   [4.5056 us 4.5872 us 4.6704 us]                           
 Found 6 outliers among 100 measurements (6.00%)
   6 (6.00%) high mild
 
-deserialize_message     time:   [145.16 ns 145.46 ns 145.79 ns]                                
-Found 3 outliers among 100 measurements (3.00%)
-  3 (3.00%) high severe
+vertx_send              time:   [274.87 ns 281.62 ns 289.84 ns]                       
+Found 8 outliers among 100 measurements (8.00%)
+  6 (6.00%) high mild
+  2 (2.00%) high severe
+
+vertx_publish           time:   [274.64 ns 279.26 ns 284.22 ns]                          
+Found 5 outliers among 100 measurements (5.00%)
+  5 (5.00%) high mild
+
 ```
 
 # Work with vertx-rust
@@ -88,13 +102,15 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
 event_bus.consumer("test.01", move |m, _| {
-  m.reply(..);
+  Box::pin( async {
+    m.reply(..);
+  })
 });
 
-vertx.start();
+vertx.start().await;
 ```
 
 ### Eventbus send
@@ -104,9 +120,9 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
-event_bus.send("test.01", "Hello World".as_bytes().to_vec());
+event_bus.send("test.01", Body::String("Hello World".to_string()));
 ```
 
 ### Eventbus request
@@ -116,9 +132,9 @@ use vertx_rust::vertx::{VertxOptions, Vertx, NoClusterManager};
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
-event_bus.request("test.01", "Hello World".as_bytes().to_vec(), move |m, _| {
+event_bus.request("test.01", Body::String("Hello World".to_string()), move |m, _| {
   ...
 });
 ```
@@ -131,7 +147,7 @@ use vertx_rust::net::NetServer;
 
 let vertx_options = VertxOptions::default();
 let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
-let event_bus = vertx.event_bus();
+let event_bus = vertx.event_bus().await;
 
 let net_server = NetServer::new(Some(event_bus.clone()));
 net_server.listen(9091, move |_req, ev| {
@@ -140,7 +156,7 @@ net_server.listen(9091, move |_req, ev| {
   resp
 });
 
-vertx.start();
+vertx.start().await;
 
 ```
 

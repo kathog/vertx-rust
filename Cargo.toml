@@ -1,8 +1,8 @@
 [package]
 name = "vertx-rust"
-version = "0.1.2"
-authors = ["Daniel Lewiński <nerull@craftsoft.eu>"]
-edition = "2018"
+version = "0.5.1"
+authors = ["Daniel Lewiński <nerull@szwadron.net>"]
+edition = "2021"
 description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
 license-file = "LICENSE"
 homepage = "https://github.com/kathog/vertx-rust"
@@ -19,33 +19,60 @@ client = ["hyper-tls"]
 
 
 [dependencies]
-zookeeper = { version = "0.5.9", optional = true }
+zookeeper = { version = "0.6", optional = true }
 tcmalloc = { version = "0.3", optional = true }
-hyper-tls = {version = "0.4", optional = true}
-rayon = "1.5.0"
-rustc-serialize = "0.3.24"
-serde = "1.0.117"
-serde_json = "1.0.59"
-bincode = "1.3.1"
-futures = "0.3.6"
-uuid = { version = "0.8", features = ["v4"] }
-config = "0.10.1"
-num_cpus = "1.13.0"
-rand = "0.7.3"
-hashbrown = "0.9.1"
-lazy_static = "1.4.0"
-waiter_di = "1.6.2"
-hypospray = "0.1.2"
+hyper-tls = {version = "0.5", optional = true}
+mimalloc = { version = "0.1", default-features = false }
+serde = "1.0"
+bincode = "1.3"
+futures = "0.3"
+uuid = { version = "1.2", features = ["v4"] }
+num_cpus = "1.13"
+hashbrown = "0.13"
+lazy_static = "1.4"
+hypospray = "0.1"
 tokio = {version ="1", features = ["full"] }
-hex = "0.4.2"
-bytes = "0.6"
-multimap = "0.8.2"
-jvm-serializable = {version = "0.0.2"}
+bytes = "1"
+multimap = "0.8"
+jvm-serializable = {version = "0.0.3"}
 jvm-macro = {version = "0.0.1"}
 log = {version = "0.4", features = ["max_level_debug", "release_max_level_info"] }
-crossbeam-channel = "0.5.0"
-hyper = {version = "0.14.1", features = ["full"] }
-signal-hook = "0.2.1"
+crossbeam-channel = "0.5"
+hyper = {version = "0.14", features = ["full"] }
+signal-hook = "0.3"
+parking_lot = { version = "0.12", features = ["nightly"] }
+url = "2.3"
+regex = "1.7"
+dashmap = "5.4.0"
+chrono = "0.4"
 
 [dev-dependencies]
 pretty_env_logger = "0.4"
+criterion = { version = "0.4", features = ["async"]}
+criterion-cycles-per-byte = "0.1"
+iai = "0.1"
+console-subscriber = "0.1"
+
+[[bench]]
+#path = "benches/iai_benchmarks.rs"
+path = "benches/benchmarks.rs"
+#paths = ["benches/benchmarks.rs", "benches/iai_benchmarks.rs"]
+name = "benchmarks"
+harness = false
+
+[profile.release]
+opt-level = 3
+debug = false
+#rpath = false
+#debug-assertions = false
+lto = "fat"
+panic = "abort"
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+debug = false
+#rpath = false
+#debug-assertions = false
+lto = "fat"
+codegen-units = 1

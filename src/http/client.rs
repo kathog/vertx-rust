@@ -2,6 +2,7 @@ use futures::TryStreamExt;
 use hyper::client::{HttpConnector, ResponseFuture};
 use hyper::{Body, Client, Error, Request, Response, Uri};
 use tokio::runtime::Runtime;
+use hyper_tls::HttpsConnector;
 
 #[cfg(test)]
 mod test {
@@ -13,6 +14,7 @@ mod test {
 
     #[test]
     fn test_blocking_get() {
+        std::env::set_var("RUST_LOG", "info");
         pretty_env_logger::init_timed();
 
         let client = WebClient::new();
@@ -22,6 +24,7 @@ mod test {
 
     #[test]
     fn test_blocking_request() {
+        std::env::set_var("RUST_LOG", "info");
         pretty_env_logger::init_timed();
 
         let client = WebClient::new();
@@ -39,11 +42,12 @@ mod test {
 
     #[test]
     fn test_get() {
+        std::env::set_var("RUST_LOG", "info");
         pretty_env_logger::init_timed();
         let rt = Runtime::new().unwrap();
         let client = WebClient::new();
 
-        let response = rt.block_on(client.get("http://127.0.0.1:9092"));
+        let response = rt.block_on(client.get("https://github.com"));
         info!(
             "{:?}",
             WebClient::blocking_body(response.unwrap().into_body())
@@ -53,7 +57,7 @@ mod test {
 
 pub struct WebClient {
     client: Client<HttpConnector, Body>,
-    // tls_client: Client<HttpsConnector<HttpConnector>, Body>,
+    tls_client: Client<HttpsConnector<HttpConnector>, Body>,
     runtime: Runtime,
 }
 
@@ -61,12 +65,12 @@ pub struct WebClient {
 impl WebClient {
     pub fn new() -> Self {
         let runtime = Runtime::new().unwrap();
-        // let https = HttpsConnector::new();
-        // let tls_client = Client::builder().build::<_, Body>(https);
+        let https = HttpsConnector::new();
+        let tls_client = Client::builder().build::<_, Body>(https);
         WebClient {
             client: Client::new(),
             runtime,
-            // tls_client
+            tls_client
         }
     }
 
@@ -96,11 +100,20 @@ impl WebClient {
 
     #[inline]
     pub fn request(&self, request: Request<Body>) -> ResponseFuture {
-        self.client.request(request)
+        if request.uri().scheme_str() == Some("https") {
+            self.tls_client.request(request)
+        } else {
+            self.client.request(request)
+        }
     }
 
     #[inline]
     pub fn get(&self, url: &'static str) -> ResponseFuture {
-        self.client.get(Uri::from_static(url))
+        let uri = Uri::from_static(url);
+        if uri.scheme_str() == Some("https") {
+            self.tls_client.get(uri)
+        } else {
+            self.client.get(uri)
+        }
     }
 }

@@ -540,11 +540,18 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 }
             }
             None => {
-                // let mut map = inner_cf.lock();
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
                     caller.1.call((&msg, ev));
+                } else { // wysłanie odpowiedzi do requesta
+                    let address = mut_msg.replay.as_ref();
+                    if let Some(address) = address {
+                        let callback = inner_cf.remove(address);
+                        if let Some(caller) = callback {
+                            caller.1.call((mut_msg, ev));
+                        }
+                    }
                 }
             }
         }

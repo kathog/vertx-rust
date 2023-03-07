@@ -1,11 +1,11 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::ops::Deref;
+use atomic_refcell::AtomicRefCell;
 use crate::vertx::message::Body::{ByteArray, Byte, Short};
 
-//Message used in event bus in standalone instance and cluster
 #[derive(Clone, Default, Debug)]
-pub struct Message {
+pub struct MessageInner {
     //Destination sub address
     pub(crate) address: Option<String>,
     //Replay sub address
@@ -27,6 +27,12 @@ pub struct Message {
     pub(crate) headers: i32,
     //Message send as publish to all nodes in sub
     pub(crate) publish: bool,
+}
+
+//Message used in event bus in standalone instance and cluster
+#[derive(Clone, Default, Debug)]
+pub struct Message {
+    pub(crate) inner: AtomicRefCell<MessageInner>
 }
 
 #[derive(Clone, Debug)]
@@ -135,19 +141,28 @@ impl Default for Body {
 impl Message {
     #[inline]
     pub fn body(&self) -> Arc<Body> {
-        self.body.clone()
+        self.inner.borrow().body.clone()
+    }
+
+    pub fn address(&self) -> Option<String> {
+        self.inner.borrow().address.clone()
+    }
+
+    pub fn replay(&self) -> Option<String> {
+        self.inner.borrow().replay.clone()
     }
 
     //Reply message to event bus
     #[inline]
-    pub fn reply(&mut self, data: Body) {
-        self.body = Arc::new(data);
-        self.address = self.replay.clone();
-        self.replay = None;
+    pub fn reply(&self, data: Body) {
+        let mut inner = self.inner.borrow_mut();
+        inner.body = Arc::new(data);
+        inner.address = inner.replay.clone();
+        inner.replay = None;
     }
 
     pub fn generate() -> Message {
-        Message {
+        let inner = MessageInner {
             address: Some("test.01".to_string()),
             replay: Some(format!(
                 "__vertx.reply.{}",
@@ -157,6 +172,9 @@ impl Message {
             port: 44532_i32,
             host: "localhost".to_string(),
             ..Default::default()
+        };
+        Message {
+            inner: AtomicRefCell::new(inner),
         }
     }
 }
@@ -235,7 +253,7 @@ impl From<Vec<u8>> for Message {
             _ => panic!("system_codec_id: {} not supported", system_codec_id)
         }
 
-        Message {
+        let inner = MessageInner {
             address: Some(address),
             replay,
             port,
@@ -244,6 +262,9 @@ impl From<Vec<u8>> for Message {
             body: Arc::new(body),
             system_codec_id,
             ..Default::default()
+        };
+        Message {
+            inner: AtomicRefCell::new(inner),
         }
     }
 }
@@ -255,7 +276,7 @@ impl Message {
         let mut data = Vec::with_capacity(2048);
         data.push(1);
 
-        match self.body.deref() {
+        match self.inner.borrow().body.deref() {
             Body::Int(_) => {
                 data.push(5);
             }
@@ -295,11 +316,11 @@ impl Message {
         };
 
         data.push(0);
-        if let Some(address) = &self.address {
+        if let Some(address) = &self.address() {
             data.extend_from_slice(&(address.len() as i32).to_be_bytes());
             data.extend_from_slice(address.as_bytes());
         }
-        match &self.replay {
+        match &self.replay() {
             Some(addr) => {
                 data.extend_from_slice(&(addr.len() as i32).to_be_bytes());
                 data.extend_from_slice(addr.as_bytes());
@@ -308,12 +329,12 @@ impl Message {
                 data.extend_from_slice(&(0_i32).to_be_bytes());
             }
         }
-        data.extend_from_slice(&self.port.to_be_bytes());
-        data.extend_from_slice(&(self.host.len() as i32).to_be_bytes());
-        data.extend_from_slice(self.host.as_bytes());
+        data.extend_from_slice(&self.inner.borrow().port.to_be_bytes());
+        data.extend_from_slice(&(self.inner.borrow().host.len() as i32).to_be_bytes());
+        data.extend_from_slice(self.inner.borrow().host.as_bytes());
         data.extend_from_slice(&(4_i32).to_be_bytes());
 
-        match self.body.deref() {
+        match self.inner.borrow().body.deref() {
             Body::Int(b) => {
                 data.extend_from_slice(b.to_be_bytes().as_slice());
             }

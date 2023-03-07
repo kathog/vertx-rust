@@ -5,7 +5,7 @@ use crate::http::HttpServer;
 use crate::net;
 use crate::net::NetServer;
 use crate::vertx::cm::{ClusterManager, ClusterNodeInfo, ServerID};
-use crate::vertx::message::{Message, Body};
+use crate::vertx::message::{Message, Body, MessageInner};
 use core::fmt::Debug;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
@@ -19,6 +19,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::process::exit;
+use atomic_refcell::AtomicRefCell;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use dashmap::DashMap;
 use futures::future::BoxFuture;
@@ -299,7 +300,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
                         // tokio::spawn(async move {
                             let mut mut_msg = msg;
-                            match mut_msg.address.clone() {
+                            match mut_msg.address() {
                                 Some(address) => {
                                     if inner_local_consumers.contains_key(&address) {
                                         <EventBus<CM>>::call_local_async(
@@ -363,8 +364,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                                 ));
                                                             }
                                                             None => {
-                                                                let host = mut_msg.host.clone();
-                                                                let port = mut_msg.port;
+                                                                let host = mut_msg.inner.borrow().host.clone();
+                                                                let port = mut_msg.inner.borrow().port;
                                                                 <EventBus<CM>>::send_reply(mut_msg, host, port).await;
                                                             }
                                                         }
@@ -418,7 +419,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             DashMap<String, BoxFnMessageImmutable<CM>>,
         >,
     ) {
-        if mut_msg.publish {
+        if mut_msg.inner.borrow().publish {
             for node in nodes {
                 let mut node = Some(node);
                 <EventBus<CM>>::send_to_node(
@@ -508,7 +509,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         mut_msg: &Message,
         ev: Arc<EventBus<CM>>,
     ) {
-        let address = mut_msg.replay.clone();
+        let address = mut_msg.replay();
         if let Some(address) = address {
             // let mut map = inner_cf.lock();
             let callback = inner_cf.remove(&address);
@@ -535,7 +536,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         match callback {
             Some(caller) => {
                 caller(mut_msg, ev).await;
-                if mut_msg.address.is_some() {
+                if mut_msg.inner.borrow().address.is_some() {
                     inner_sender.send(mut_msg.clone()).unwrap();
                 }
             }
@@ -545,9 +546,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                     let msg = mut_msg.clone();
                     caller.1.call((&msg, ev));
                 } else { // wysłanie odpowiedzi do requesta
-                    let address = mut_msg.replay.as_ref();
+                    let address = mut_msg.inner.borrow().replay.clone();
                     if let Some(address) = address {
-                        let callback = inner_cf.remove(address);
+                        let callback = inner_cf.remove(&address);
                         if let Some(caller) = callback {
                             caller.1.call((mut_msg, ev));
                         }
@@ -575,7 +576,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             Some(caller) => {
 
                 caller(mut_msg, ev).await;
-                if mut_msg.address.is_some() {
+                if mut_msg.inner.borrow().address.is_some() {
                     inner_sender.send(mut_msg.clone()).unwrap();
                 }
             }
@@ -730,11 +731,14 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     pub fn send(&self, address: &str, request: Body) {
         let addr = address.to_owned();
-        let message = Message {
+        let message_inner = MessageInner {
             address: Some(addr),
             replay: None,
             body: Arc::new(request),
             ..Default::default()
+        };
+        let message = Message{
+            inner: AtomicRefCell::new(message_inner),
         };
         let local_sender = self.sender.lock();
         local_sender.send(message).unwrap();
@@ -743,12 +747,15 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     pub fn publish(&self, address: &str, request: Body) {
         let addr = address.to_owned();
-        let message = Message {
+        let message_inner = MessageInner {
             address: Some(addr),
             replay: None,
             body: Arc::new(request),
             publish: true,
             ..Default::default()
+        };
+        let message = Message{
+            inner: AtomicRefCell::new(message_inner),
         };
         let local_sender = self.sender.lock();
         local_sender.send(message).unwrap();
@@ -760,7 +767,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         OP: Fn(&Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
     {
         let addr = address.to_owned();
-        let message = Message {
+        let message_inner = MessageInner {
             address: Some(addr),
             replay: Some(format!(
                 "__vertx.reply.{}",
@@ -771,9 +778,12 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             port: self.event_bus_port as i32,
             ..Default::default()
         };
+        let message = Message{
+            inner: AtomicRefCell::new(message_inner),
+        };
         let local_cons = self.callback_functions.clone();
         local_cons
-            .insert(message.replay.clone().unwrap(), Box::new(op));
+            .insert(message.replay().unwrap(), Box::new(op));
         let local_sender = self.sender.lock();
         local_sender.send(message).unwrap();
     }

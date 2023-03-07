@@ -23,7 +23,7 @@ lazy_static! {
         let event_bus = RT.block_on(VERTX.event_bus());
         RT.block_on(async {
             event_bus.local_consumer("test.01", move |m, _| {
-                Box::pin(async {
+                Box::pin(async move {
                     let b = m.body();
                     let response = format!(
                         r#"{{"health": "{code}"}}"#,

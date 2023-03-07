@@ -1,10 +1,11 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use atomic_refcell::AtomicRefCell;
 use crate::vertx::message::Body::{ByteArray, Byte, Short};
 
-#[derive(Clone, Default, Debug)]
+#[derive(Default, Debug)]
 pub struct MessageInner {
     //Destination sub address
     pub(crate) address: Option<String>,
@@ -30,9 +31,10 @@ pub struct MessageInner {
 }
 
 //Message used in event bus in standalone instance and cluster
-#[derive(Clone, Default, Debug)]
+#[derive(Default, Debug)]
 pub struct Message {
-    pub(crate) inner: AtomicRefCell<MessageInner>
+    pub(crate) inner: AtomicRefCell<MessageInner>,
+    pub(crate) invoke: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -159,6 +161,7 @@ impl Message {
         inner.body = Arc::new(data);
         inner.address = inner.replay.clone();
         inner.replay = None;
+        self.invoke.store(false, Ordering::SeqCst);
     }
 
     pub fn generate() -> Message {
@@ -175,6 +178,7 @@ impl Message {
         };
         Message {
             inner: AtomicRefCell::new(inner),
+            invoke: AtomicBool::new(false)
         }
     }
 }
@@ -265,6 +269,7 @@ impl From<Vec<u8>> for Message {
         };
         Message {
             inner: AtomicRefCell::new(inner),
+            invoke: AtomicBool::new(false)
         }
     }
 }

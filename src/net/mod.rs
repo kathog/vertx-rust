@@ -19,7 +19,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
 
     pub(crate) async fn listen_for_message<OP>(&mut self, port: u16, op: OP)
     where
-        OP: Fn(Vec<u8>, Sender<Message>) -> Vec<u8> + 'static + Send + Sync + Copy,
+        OP: Fn(Vec<u8>, Sender<Arc<Message>>) -> Vec<u8> + 'static + Send + Sync + Copy,
     {
         let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await.unwrap();
         self.port = listener.local_addr().unwrap().port();

@@ -9,13 +9,16 @@ use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::message::{Body, Message};
 use vertx_rust::vertx::{cm::NoClusterManager, EventBus, Vertx, VertxOptions};
 
-fn invoke_test1 (m: &mut Message, _: Arc<EventBus<NoClusterManager>>) -> BoxFuture<()>{
+fn invoke_test1 (m: Arc<Message>, ev: Arc<EventBus<NoClusterManager>>) -> BoxFuture<'static, ()>{
     let b = m.body();
     let response = format!(r#"{{"health": "{code}"}}"#, code = b.as_i32().unwrap());
-
-    Box::pin(async {
+    println!("hello from consumer test.01");
+    Box::pin(async move {
         // async body
-        m.reply(Body::ByteArray(response.into_bytes()));
+        ev.request("test.02", Body::Null, move |msg, _| {
+            println!("hello replay test.02");
+            m.reply(Body::ByteArray(response.clone().into_bytes()));
+        });
     })
 }
 
@@ -34,6 +37,12 @@ async fn main() {
     let event_bus = vertx.event_bus().await;
 
     event_bus.local_consumer("test.01", invoke_test1);
+    event_bus.local_consumer("test.02", move |m, _| {
+        Box::pin(async move {
+            println!("hello from consumer test.02");
+            m.reply(Body::Null);
+        })
+    });
     let net_server = vertx.create_net_server().await;
     net_server
         .listen(9091, move |_req, ev| {
@@ -74,6 +83,7 @@ Content-Length: {len}
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);
             ev.request("test.01", Body::Int(102), move |m, _| {
+                println!("hello from replay test.01");
                 let _ = tx.send(m.body());
             });
             let body = rx.recv().unwrap();

@@ -28,7 +28,7 @@ use tokio::task::JoinHandle;
 
 // type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
 type BoxFnMessageImmutable<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
-type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync>>;
+type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync>>;
 
 lazy_static! {
     static ref TCPS: Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
@@ -199,7 +199,7 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     //     Arc<HashMap<String, BoxFnMessage<CM>>>,
     callback_functions:
         Arc<DashMap<String, BoxFnMessageImmutable<CM>>>,
-    pub(crate) sender: Mutex<Sender<Message>>,
+    pub(crate) sender: Mutex<Sender<Arc<Message>>>,
     receiver_joiner: Arc<JoinHandle<()>>,
     cluster_manager: Arc<Option<CM>>,
     event_bus_port: u16,
@@ -209,7 +209,7 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
 
 impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
-        let (sender, _): (Sender<Message>, Receiver<Message>) = bounded(1);
+        let (sender, _): (Sender<Arc<Message>>, Receiver<Arc<Message>>) = bounded(1);
         let receiver_joiner = tokio::spawn(async {});
         let ev = EventBus {
             options,
@@ -249,7 +249,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     async fn init(&mut self) {
-        let (sender, receiver): (Sender<Message>, Receiver<Message>) = bounded(self.options.event_bus_queue_size);
+        let (sender, receiver): (Sender<Arc<Message>>, Receiver<Arc<Message>>) = bounded(self.options.event_bus_queue_size);
         self.sender = Mutex::new(sender);
         let local_consumers = self.consumers.clone();
         let local_cf = self.callback_functions.clone();
@@ -269,14 +269,14 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     async fn prepare_consumer_msg(
         &mut self,
-        receiver: Receiver<Message>,
+        receiver: Receiver<Arc<Message>>,
         local_consumers: Arc<
             HashMap<String, PinBoxFnMessage<CM>>,
         >,
         local_cf: Arc<
             DashMap<String, BoxFnMessageImmutable<CM>>,
         >,
-        local_sender: Sender<Message>,
+        local_sender: Sender<Arc<Message>>,
     ) {
         let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
@@ -290,7 +290,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 }
                 match receiver.recv() {
                     Ok(msg) => {
-                        trace!("{:?}", msg);
+                        trace!("{:?}", msg.inner.borrow());
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
@@ -299,14 +299,14 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                         let inner_local_consumers = local_local_consumers.clone();
 
                         // tokio::spawn(async move {
-                            let mut mut_msg = msg;
+                            let mut_msg = msg;
                             match mut_msg.address() {
                                 Some(address) => {
                                     if inner_local_consumers.contains_key(&address) {
                                         <EventBus<CM>>::call_local_async(
                                             &inner_local_consumers,
                                             &inner_sender,
-                                            &mut mut_msg,
+                                            mut_msg,
                                             &address,
                                             inner_ev.clone().unwrap(),
                                             inner_cf,
@@ -343,7 +343,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                                 &inner_consummers,
                                                                 &inner_sender,
                                                                 &inner_ev,
-                                                                &mut mut_msg,
+                                                                mut_msg,
                                                                 &address,
                                                                 cm,
                                                                 &n,
@@ -377,7 +377,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                 <EventBus<CM>>::call_local_func(
                                                     &inner_consummers,
                                                     &inner_sender,
-                                                    &mut mut_msg,
+                                                    mut_msg,
                                                     &address,
                                                     inner_ev.clone().unwrap(),
                                                     inner_cf,
@@ -409,9 +409,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         inner_consummers: &Arc<
             HashMap<String, PinBoxFnMessage<CM>>,
         >,
-        inner_sender: &Sender<Message>,
+        inner_sender: &Sender<Arc<Message>>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
-        mut mut_msg: &mut Message,
+        mut_msg: Arc<Message>,
         address: &str,
         cm: &mut CM,
         nodes: &[ClusterNodeInfo],
@@ -426,7 +426,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                     &inner_consummers,
                     &inner_sender,
                     inner_ev,
-                    &mut mut_msg,
+                    mut_msg.clone(),
                     &address,
                     cm,
                     inner_cf.clone(),
@@ -447,7 +447,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 &inner_consummers,
                 &inner_sender,
                 inner_ev,
-                &mut mut_msg,
+                mut_msg,
                 &address,
                 cm,
                 inner_cf,
@@ -461,9 +461,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         inner_consummers: &&Arc<
             HashMap<String, PinBoxFnMessage<CM>>,
         >,
-        inner_sender: &&Sender<Message>,
+        inner_sender: &&Sender<Arc<Message>>,
         inner_ev: &Option<Arc<EventBus<CM>>>,
-        mut mut_msg: &mut &mut Message,
+        mut_msg: Arc<Message>,
         address: &&str,
         cm: &mut CM,
         inner_cf: Arc<
@@ -479,7 +479,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             <EventBus<CM>>::call_local_func(
                 &inner_consummers,
                 &inner_sender,
-                &mut mut_msg,
+                mut_msg,
                 &address,
                 inner_ev.clone().unwrap(),
                 inner_cf,
@@ -487,14 +487,15 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         } else {
             debug!("{:?}", node);
             let node_id = node.nodeId.clone();
-            let mut message: &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
+            // let mut message: &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
+            let message = mut_msg.clone();
             // tokio::spawn(async move {
                 let tcp_stream = TCPS.get(&node_id);
                 match tcp_stream {
-                    Some(stream) => <EventBus<CM>>::get_stream(&mut message, stream).await,
+                    Some(stream) => <EventBus<CM>>::get_stream(message, stream).await,
 
                     None => {
-                        <EventBus<CM>>::create_stream(&mut message, host, port, node_id).await;
+                        <EventBus<CM>>::create_stream(message, host, port, node_id).await;
                     }
                 }
             // });
@@ -524,8 +525,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         inner_consummers: &Arc<
             HashMap<String, PinBoxFnMessage<CM>>,
         >,
-        inner_sender: &Sender<Message>,
-        mut_msg: &mut Message,
+        inner_sender: &Sender<Arc<Message>>,
+        mut_msg: Arc<Message>,
         address: &str,
         ev: Arc<EventBus<CM>>,
         inner_cf: Arc<
@@ -535,7 +536,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let callback = inner_consummers.get(&address.to_string());
         match callback {
             Some(caller) => {
-                caller(mut_msg, ev).await;
+                if !mut_msg.invoke.load(Ordering::SeqCst) {
+                    caller(mut_msg.clone(), ev).await;
+                    mut_msg.invoke.store(true, Ordering::SeqCst);
+                }
                 if mut_msg.inner.borrow().address.is_some() {
                     inner_sender.send(mut_msg.clone()).unwrap();
                 }
@@ -550,7 +554,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                     if let Some(address) = address {
                         let callback = inner_cf.remove(&address);
                         if let Some(caller) = callback {
-                            caller.1.call((mut_msg, ev));
+                            caller.1.call((mut_msg.as_ref(), ev));
                         }
                     }
                 }
@@ -563,8 +567,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         inner_consummers: &Arc<
             HashMap<String, PinBoxFnMessage<CM>>,
         >,
-        inner_sender: &Sender<Message>,
-        mut_msg: &mut Message,
+        inner_sender: &Sender<Arc<Message>>,
+        mut_msg: Arc<Message>,
         address: &str,
         ev: Arc<EventBus<CM>>,
         inner_cf: Arc<
@@ -574,8 +578,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let callback = inner_consummers.get(&address.to_string());
         match callback {
             Some(caller) => {
-
-                caller(mut_msg, ev).await;
+                if !mut_msg.invoke.load(Ordering::SeqCst) {
+                    caller(mut_msg.clone(), ev).await;
+                    mut_msg.invoke.store(true, Ordering::SeqCst);
+                }
                 if mut_msg.inner.borrow().address.is_some() {
                     inner_sender.send(mut_msg.clone()).unwrap();
                 }
@@ -591,7 +597,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    async fn get_stream(mut_msg: &mut Message, stream: &Arc<TcpStream>) {
+    async fn get_stream(mut_msg: Arc<Message>, stream: &Arc<TcpStream>) {
         let mut stream = stream.clone();
         unsafe {
             let tcps = Arc::get_mut_unchecked(&mut stream);
@@ -608,7 +614,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    async fn create_stream(mut_msg: &mut Message, host: String, port: i32, node_id: String) {
+    async fn create_stream(mut_msg: Arc<Message>, host: String, port: i32, node_id: String) {
         match TcpStream::connect(format!("{}:{}", host, port)).await {
             Ok(mut stream) => match stream.write_all(&mut_msg.to_vec().unwrap()).await {
                 Ok(_r) => {
@@ -631,7 +637,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    async fn send_reply(mut_msg: Message, host: String, port: i32) {
+    async fn send_reply(mut_msg: Arc<Message>, host: String, port: i32) {
         // tokio::spawn(async move {
 
             let tcp_stream = TCPS.get(&format!("{}_{}", host.clone(), port));
@@ -691,7 +697,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let net_server = net::NetServer::<CM>::new(self.self_arc.clone());
         net_server.listen_for_message(self.options.vertx_port, move |req, send| {
             let resp = vec![];
-            let msg = Message::from(req);
+            let msg = Arc::new(Message::from(req));
             debug!("net_server => {:?}", msg);
 
             let _ = send.send(msg);
@@ -703,7 +709,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     pub fn local_consumer<OP>(&self, address: &str, op: OP)
         where
-            OP: Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync,
+            OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync,
     {
         let local_op = Box::pin(op);
         unsafe {
@@ -714,7 +720,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     pub fn consumer<OP>(&self, address: &str, op: OP)
     where
-        OP: Fn(&mut Message, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync,
+        OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync,
     {
         unsafe {
             let mut local_cons = self.consumers.clone();
@@ -739,9 +745,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         };
         let message = Message{
             inner: AtomicRefCell::new(message_inner),
+            invoke: Default::default(),
         };
         let local_sender = self.sender.lock();
-        local_sender.send(message).unwrap();
+        local_sender.send(Arc::new(message)).unwrap();
     }
 
     #[inline]
@@ -756,9 +763,10 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         };
         let message = Message{
             inner: AtomicRefCell::new(message_inner),
+            invoke: Default::default(),
         };
         let local_sender = self.sender.lock();
-        local_sender.send(message).unwrap();
+        local_sender.send(Arc::new(message)).unwrap();
     }
 
     #[inline]
@@ -780,11 +788,12 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         };
         let message = Message{
             inner: AtomicRefCell::new(message_inner),
+            invoke: Default::default(),
         };
         let local_cons = self.callback_functions.clone();
         local_cons
             .insert(message.replay().unwrap(), Box::new(op));
         let local_sender = self.sender.lock();
-        local_sender.send(message).unwrap();
+        local_sender.send(Arc::new(message)).unwrap();
     }
 }

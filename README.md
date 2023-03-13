@@ -135,7 +135,9 @@ let vertx : Vertx<NoClusterManager> = Vertx::new(vertx_options);
 let event_bus = vertx.event_bus().await;
 
 event_bus.request("test.01", Body::String("Hello World".to_string()), move |m, _| {
-  ...
+    Box::pin(async move {
+        ...
+    })
 });
 ```
 

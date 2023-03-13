@@ -71,7 +71,8 @@ fn criterion_vertx(c: &mut Criterion) {
     c.bench_function("vertx_request", |b| b.iter(|| {
         let (tx, rx) = bounded(1);
         EVENT_BUS.request("test.01", Body::Int(102), move |m, _| {
-            let _ = tx.send(m.body());
+            let tx = tx.clone();
+            Box::pin(async move {let _ = tx.send(m.body()); })
         });
         let _ = rx.recv().unwrap();
     }));

@@ -15,9 +15,13 @@ fn invoke_test1 (m: Arc<Message>, ev: Arc<EventBus<NoClusterManager>>) -> BoxFut
     println!("hello from consumer test.01");
     Box::pin(async move {
         // async body
-        ev.request("test.02", Body::Null, move |msg, _| {
-            println!("hello replay test.02");
-            m.reply(Body::ByteArray(response.clone().into_bytes()));
+        ev.request("test.02", Body::Null, move |_, _| {
+            let response = response.clone();
+            let m = m.clone();
+            Box::pin(async move {
+                println!("hello replay test.02");
+                m.reply(Body::ByteArray(response.clone().into_bytes()));
+            })
         });
     })
 }
@@ -37,9 +41,21 @@ async fn main() {
     let event_bus = vertx.event_bus().await;
 
     event_bus.local_consumer("test.01", invoke_test1);
-    event_bus.local_consumer("test.02", move |m, _| {
+    event_bus.local_consumer("test.02", move |m, ev| {
         Box::pin(async move {
             println!("hello from consumer test.02");
+            ev.request("test.03", Body::Null, move |_, _| {
+                let m = m.clone();
+                Box::pin(async move {
+                    println!("hello replay test.03");
+                    m.reply(Body::Null);
+                })
+            });
+        })
+    });
+    event_bus.local_consumer("test.03", move |m, _| {
+        Box::pin(async move {
+            println!("hello from consumer test.03");
             m.reply(Body::Null);
         })
     });
@@ -49,7 +65,8 @@ async fn main() {
             let mut resp = vec![];
             let (tx, rx) = bounded(1);
             ev.request("test.01", Body::Int(101), move |m, _| {
-                let _ = tx.send(m.body());
+                let tx = tx.clone();
+                Box::pin(async move {let _ = tx.send(m.body());})
             });
 
             let body = rx.recv().unwrap();
@@ -83,8 +100,11 @@ Content-Length: {len}
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);
             ev.request("test.01", Body::Int(102), move |m, _| {
-                println!("hello from replay test.01");
-                let _ = tx.send(m.body());
+                let tx = tx.clone();
+                Box::pin(async move {
+                    println!("hello from replay test.01");
+                    let _ = tx.send(m.body());
+                })
             });
             let body = rx.recv().unwrap();
             let body = body.as_bytes().unwrap();

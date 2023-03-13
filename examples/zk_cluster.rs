@@ -31,7 +31,8 @@ async fn main() {
         .get("/", move |_req, ev| {
             let (tx, rx) = bounded(1);
             ev.request("test.01", Body::String("UP".to_string()), move |m, _| {
-                let _ = tx.send(m.body());
+                let tx = tx.clone();
+                Box::pin(async move {let _ = tx.send(m.body()); })
             });
             let body = rx.recv().unwrap();
             let body = body.as_string().unwrap();

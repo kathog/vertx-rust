@@ -27,7 +27,7 @@ use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 
 // type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
-type BoxFnMessageImmutable<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
+// type PinBoxFnMessage<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
 type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync>>;
 
 lazy_static! {
@@ -198,7 +198,7 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     // local_consumers:
     //     Arc<HashMap<String, BoxFnMessage<CM>>>,
     callback_functions:
-        Arc<DashMap<String, BoxFnMessageImmutable<CM>>>,
+        Arc<DashMap<String, PinBoxFnMessage<CM>>>,
     pub(crate) sender: Mutex<Sender<Arc<Message>>>,
     receiver_joiner: Arc<JoinHandle<()>>,
     cluster_manager: Arc<Option<CM>>,
@@ -274,7 +274,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             HashMap<String, PinBoxFnMessage<CM>>,
         >,
         local_cf: Arc<
-            DashMap<String, BoxFnMessageImmutable<CM>>,
+            DashMap<String, PinBoxFnMessage<CM>>,
         >,
         local_sender: Sender<Arc<Message>>,
     ) {
@@ -359,7 +359,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                                         match callback {
                                                             Some(caller) => {
                                                                 caller.1.call((
-                                                                    &mut_msg,
+                                                                    mut_msg,
                                                                     inner_ev.clone().unwrap(),
                                                                 ));
                                                             }
@@ -389,9 +389,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                                 }
                                 None => <EventBus<CM>>::call_replay(
                                     inner_cf,
-                                    &mut_msg,
+                                    mut_msg,
                                     inner_ev.clone().unwrap(),
-                                ),
+                                ).await,
                             }
                         // }).await;
                     }
@@ -416,7 +416,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         cm: &mut CM,
         nodes: &[ClusterNodeInfo],
         inner_cf: Arc<
-            DashMap<String, BoxFnMessageImmutable<CM>>,
+            DashMap<String, PinBoxFnMessage<CM>>,
         >,
     ) {
         if mut_msg.inner.borrow().publish {
@@ -467,7 +467,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         address: &&str,
         cm: &mut CM,
         inner_cf: Arc<
-            DashMap<String, BoxFnMessageImmutable<CM>>,
+            DashMap<String, PinBoxFnMessage<CM>>,
         >,
         node: &mut Option<&ClusterNodeInfo>,
     ) {
@@ -503,11 +503,11 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     }
 
     #[inline]
-    fn call_replay(
+    async fn call_replay(
         inner_cf: Arc<
-            DashMap<String, BoxFnMessageImmutable<CM>>,
+            DashMap<String, PinBoxFnMessage<CM>>,
         >,
-        mut_msg: &Message,
+        mut_msg: Arc<Message>,
         ev: Arc<EventBus<CM>>,
     ) {
         let address = mut_msg.replay();
@@ -515,7 +515,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             // let mut map = inner_cf.lock();
             let callback = inner_cf.remove(&address);
             if let Some(caller) = callback {
-                caller.1.call((mut_msg, ev));
+                caller.1.call((mut_msg, ev)).await;
             }
         }
     }
@@ -530,7 +530,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         address: &str,
         ev: Arc<EventBus<CM>>,
         inner_cf: Arc<
-            DashMap<String, BoxFnMessageImmutable<CM>>,
+            DashMap<String, PinBoxFnMessage<CM>>,
         >,
     ) {
         let callback = inner_consummers.get(&address.to_string());
@@ -548,13 +548,13 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
-                    caller.1.call((&msg, ev));
+                    caller.1.call((msg, ev)).await;
                 } else { // wysłanie odpowiedzi do requesta
                     let address = mut_msg.inner.borrow().replay.clone();
                     if let Some(address) = address {
                         let callback = inner_cf.remove(&address);
                         if let Some(caller) = callback {
-                            caller.1.call((mut_msg.as_ref(), ev));
+                            caller.1.call((mut_msg, ev)).await;
                         }
                     }
                 }
@@ -572,7 +572,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         address: &str,
         ev: Arc<EventBus<CM>>,
         inner_cf: Arc<
-            DashMap<String, BoxFnMessageImmutable<CM>>,
+            DashMap<String, PinBoxFnMessage<CM>>,
         >,
     ) {
         let callback = inner_consummers.get(&address.to_string());
@@ -590,7 +590,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
-                    caller.1.call((&msg, ev));
+                    caller.1.call((msg, ev)).await;
                 }
             }
         }
@@ -772,7 +772,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     pub fn request<OP>(&self, address: &str, request: Body, op: OP)
     where
-        OP: Fn(&Message, Arc<EventBus<CM>>) + Send + 'static + Sync,
+        OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync,
     {
         let addr = address.to_owned();
         let message_inner = MessageInner {
@@ -792,7 +792,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         };
         let local_cons = self.callback_functions.clone();
         local_cons
-            .insert(message.replay().unwrap(), Box::new(op));
+            .insert(message.replay().unwrap(), Box::pin(op));
         let local_sender = self.sender.lock();
         local_sender.send(Arc::new(message)).unwrap();
     }

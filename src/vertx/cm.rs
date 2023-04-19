@@ -19,7 +19,7 @@ pub struct ClusterNodeInfo {
 }
 
 //Interface of cluster manager support integrations of cluster nodes
-pub trait ClusterManager: Send {
+pub trait ClusterManager: Send + Clone {
     //Register current node as vertx sub
     fn add_sub(&self, address: String);
 
@@ -49,6 +49,7 @@ pub trait ClusterManager: Send {
 }
 
 //Empty implementation of cluster manager to create vertx standalone instance
+#[derive(Clone)]
 pub struct NoClusterManager;
 
 impl ClusterManager for NoClusterManager {

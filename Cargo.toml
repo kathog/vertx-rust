@@ -46,6 +46,7 @@ regex = "1.7"
 dashmap = "5.4.0"
 chrono = "0.4"
 atomic_refcell = "0.1"
+tide = {version = "0.16.0", default-features = false, features = ["h1-server"]}
 
 [dev-dependencies]
 pretty_env_logger = "0.4"

@@ -29,6 +29,7 @@ struct ZKSyncMapKeyValue {
     key: Object,
 }
 
+#[derive(Clone)]
 pub struct ZookeeperClusterManager {
     node_id: String,
     nodes: Arc<Mutex<Vec<String>>>,

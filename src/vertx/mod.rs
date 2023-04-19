@@ -127,14 +127,14 @@ impl Default for EventBusOptions {
     }
 }
 
-pub struct Vertx<CM: 'static + ClusterManager + Send + Sync> {
+pub struct Vertx<CM: 'static + ClusterManager + Send + Sync +Clone> {
     #[allow(dead_code)]
     options: VertxOptions,
     event_bus: Arc<EventBus<CM>>,
     ph: PhantomData<CM>,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
+impl<CM: 'static + ClusterManager + Send + Sync +Clone> Vertx<CM> {
     pub fn new(options: VertxOptions) -> Vertx<CM> {
         let event_bus = EventBus::<CM>::new(options.event_bus_options.clone());
         Vertx {
@@ -166,7 +166,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
 
     pub async fn create_http_server(&self) -> HttpServer<CM> {
         let _ = self.event_bus().await;
-        HttpServer::new(Some(self.event_bus.clone()))
+        HttpServer::new(self.event_bus.clone())
     }
 
     pub async fn create_net_server(&self) -> &'static mut NetServer<CM> {
@@ -191,7 +191,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
     }
 }
 
-pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
+pub struct EventBus<CM: 'static + ClusterManager + Send + Sync +Clone> {
     options: EventBusOptions,
     consumers: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
     consumers_async: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
@@ -207,7 +207,7 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     init: bool,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
+impl<CM: 'static + ClusterManager + Send + Sync +Clone> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
         let (sender, _): (Sender<Arc<Message>>, Receiver<Arc<Message>>) = bounded(1);
         let receiver_joiner = tokio::spawn(async {});

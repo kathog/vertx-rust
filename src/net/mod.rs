@@ -7,12 +7,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 // use tokio::sync::mpsc::Sender;
 
 
-pub struct NetServer<CM: 'static + ClusterManager + Send + Sync> {
+pub struct NetServer<CM: 'static + ClusterManager + Send + Sync +Clone> {
     pub port: u16,
     event_bus: Option<Arc<EventBus<CM>>>,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
+impl<CM: 'static + ClusterManager + Send + Sync +Clone> NetServer<CM> {
     pub(crate) fn new(event_bus: Option<Arc<EventBus<CM>>>) -> &'static mut NetServer<CM> {
         Box::leak(Box::new(NetServer::<CM> { port: 0, event_bus }))
     }

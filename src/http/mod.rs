@@ -1,11 +1,13 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use bytes::Bytes;
 
 use chrono::{DateTime, Local};
 use hashbrown::hash_map::{Iter};
 use hashbrown::HashMap;
 use hyper::{Body, HeaderMap, Method, Response, StatusCode, Uri, Version};
+use hyper::body::HttpBody;
 use hyper::header::HeaderValue;
 use hyper::http::{Error, Extensions};
 use hyper::server::conn::AddrStream;
@@ -22,9 +24,10 @@ pub mod client;
 
 
 pub struct Request {
-    pub(crate) request: hyper::Request<Body>,
+    pub request: hyper::Request<Body>,
     pub(crate) paths: HashMap<String, String>,
-    pub request_timestamp: DateTime<Local>
+    pub request_timestamp: DateTime<Local>,
+    pub body: Vec<u8>,
 }
 
 impl Request {
@@ -235,16 +238,35 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
             let ev = ev.clone();
             let callers = callers.clone();
             async move {
-                let x = Ok::<_, Infallible>(service_fn(move |req: hyper::Request<Body>| {
+                let x = Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<Body>| {
                     let ev = ev.clone();
                     let callers = callers.clone();
                     async move {
+                        let mut data = vec![];
+                        let body = req.body_mut();
+                        loop {
+                            let bytes = body.data().await;
+                            match bytes {
+                                Some(bytes) => {
+                                    match bytes {
+                                        Ok(bytes) => {
+                                            data.extend_from_slice(&bytes);
+                                        }
+                                        Err(_) => {
+                                            break;
+                                        }
+                                    }
+                                }
+                                None => {break;}
+                            }
+                        }
                         let ev = ev.to_owned();
                         let op = callers.get(&(req.uri().path().to_owned(), req.method().clone()));
                         let request = Request {
                             request: req,
                             paths: Default::default(),
-                            request_timestamp: Local::now()
+                            request_timestamp: Local::now(),
+                            body: data
                         };
                         match op {
                             Some(op) => {
@@ -281,11 +303,29 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
             let callers = callers.clone();
             let regexes = regexes.clone();
             async move {
-                Ok::<_, Infallible>(service_fn(move |req: hyper::Request<Body>| {
+                Ok::<_, Infallible>(service_fn(move |mut req: hyper::Request<Body>| {
                     let ev = ev.clone();
                     let callers = callers.clone();
                     let regexes = regexes.clone();
                     async move {
+                        let mut data = vec![];
+                        let body = req.body_mut();
+                        loop {
+                            let bytes = body.data().await;
+                            match bytes {
+                                Some(bytes) => {
+                                    match bytes {
+                                        Ok(bytes) => {
+                                            data.extend_from_slice(&bytes);
+                                        }
+                                        Err(_) => {
+                                            break;
+                                        }
+                                    }
+                                }
+                                None => {break;}
+                            }
+                        }
                         let ev = ev.to_owned();
                         let path = req.uri().path().to_owned();
                         let mut path_key = &path;
@@ -314,7 +354,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
                         let request = Request {
                             request: req,
                             paths,
-                            request_timestamp: Local::now()
+                            request_timestamp: Local::now(),
+                            body: data
                         };
                         <HttpServer<CM>>::invoke_function(request, ev, op)
                     }

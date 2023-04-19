@@ -116,9 +116,7 @@ Content-Length: {len}
         })
 
         .post("/", move |req, _| {
-            let body = req.into_body();
-            let body = WebClient::blocking_body(body).unwrap();
-
+            let body = req.body;
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")

@@ -5,7 +5,6 @@ use crossbeam_channel::bounded;
 use futures::future::{BoxFuture};
 use hyper::Response;
 use hyper::StatusCode;
-use vertx_rust::http::client::WebClient;
 use vertx_rust::vertx::message::{Body, Message};
 use vertx_rust::vertx::{cm::NoClusterManager, EventBus, Vertx, VertxOptions};
 

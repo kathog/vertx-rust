@@ -794,6 +794,8 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         local_cons
             .insert(message.replay().unwrap(), Box::pin(op));
         let local_sender = self.sender.lock();
-        local_sender.send(Arc::new(message)).unwrap();
+        if let Err(err) = local_sender.send(Arc::new(message)) {
+            warn!("{:?}", err);
+        }
     }
 }

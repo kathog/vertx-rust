@@ -1,6 +1,6 @@
 [package]
 name = "vertx-rust"
-version = "0.7.2"
+version = "0.8.0"
 authors = ["Daniel Lewiński <nerull@szwadron.net>"]
 edition = "2021"
 description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
@@ -67,7 +67,7 @@ debug = false
 #rpath = false
 #debug-assertions = false
 lto = "fat"
-panic = "abort"
+#panic = "abort"
 codegen-units = 1
 
 [profile.bench]

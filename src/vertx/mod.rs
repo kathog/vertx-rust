@@ -10,25 +10,53 @@ use core::fmt::Debug;
 use hashbrown::HashMap;
 use log::{debug, error, info, trace, warn};
 use signal_hook::iterator::Signals;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 use std::{
     sync::{Arc},
 };
+use std::any::Any;
+use std::future::Future;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
+use std::panic::RefUnwindSafe;
 use std::pin::Pin;
 use std::process::exit;
 use atomic_refcell::AtomicRefCell;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use dashmap::DashMap;
-use futures::future::BoxFuture;
+// use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
+use futures::FutureExt;
 
 // type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
 // type PinBoxFnMessage<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
-type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync>>;
+pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
+type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync + RefUnwindSafe>>;
+
+
+pub fn wrap_with_catch_unwind<CM, F>(func: F) -> PinBoxFnMessage<CM>
+    where
+        CM: ClusterManager + Send + Sync + 'static + RefUnwindSafe,
+        F: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync + RefUnwindSafe,
+{
+    let wrapped_func = move |msg: Arc<Message>, bus: Arc<EventBus<CM>>| {
+        let result = std::panic::catch_unwind(|| func(msg.clone(), bus.clone()));
+        match result {
+            Ok(future) => future,
+            Err(err) => Box::pin(async move {
+                if let Some (err_msg) = err.downcast_ref::<&str>() {
+                    error!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>());
+                }
+
+                msg.reply(Body::Null);
+            }),
+        }
+    };
+
+    Box::pin(wrapped_func)
+}
 
 lazy_static! {
     static ref TCPS: Arc<HashMap<String, Arc<TcpStream>>> = Arc::new(HashMap::new());
@@ -127,14 +155,14 @@ impl Default for EventBusOptions {
     }
 }
 
-pub struct Vertx<CM: 'static + ClusterManager + Send + Sync> {
+pub struct Vertx<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> {
     #[allow(dead_code)]
     options: VertxOptions,
     event_bus: Arc<EventBus<CM>>,
     ph: PhantomData<CM>,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
+impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> Vertx<CM> {
     pub fn new(options: VertxOptions) -> Vertx<CM> {
         let event_bus = EventBus::<CM>::new(options.event_bus_options.clone());
         Vertx {
@@ -191,7 +219,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> Vertx<CM> {
     }
 }
 
-pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
+pub struct EventBus<CM: 'static + ClusterManager + Send + Sync+ RefUnwindSafe> {
     options: EventBusOptions,
     consumers: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
     consumers_async: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
@@ -207,7 +235,9 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync> {
     init: bool,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
+impl <CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> RefUnwindSafe for EventBus<CM> {}
+
+impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
     pub fn new(options: EventBusOptions) -> EventBus<CM> {
         let (sender, _): (Sender<Arc<Message>>, Receiver<Arc<Message>>) = bounded(1);
         let receiver_joiner = tokio::spawn(async {});
@@ -290,7 +320,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
                 }
                 match receiver.recv() {
                     Ok(msg) => {
-                        trace!("{:?}", msg.inner.borrow());
+                        trace!("{:?} - {:?}", msg.invoke_count, msg.inner.borrow());
                         let inner_consummers = local_consumers.clone();
                         let inner_cf = local_cf.clone();
                         let inner_sender = local_sender.clone();
@@ -358,10 +388,25 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
                                                         match callback {
                                                             Some(caller) => {
-                                                                caller.1.call((
-                                                                    mut_msg,
-                                                                    inner_ev.clone().unwrap(),
-                                                                ));
+                                                                let handler = tokio::spawn(caller.1(mut_msg.clone(), inner_ev.clone().unwrap()));
+                                                                match handler.catch_unwind().await {
+                                                                    Ok(ok) => match ok {
+                                                                        Ok(_) => {},
+                                                                        Err(err) => {
+                                                                            error!("{:?}", err.to_string());
+                                                                            mut_msg.reply(Body::Panic(err.to_string()));
+                                                                        }
+                                                                    },
+                                                                    Err(err) => {
+                                                                        if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                                                            error!("{:?}", err_msg);
+                                                                            mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                                                        } else {
+                                                                            mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                                                        }
+
+                                                                    }
+                                                                }
                                                             }
                                                             None => {
                                                                 let host = mut_msg.inner.borrow().host.clone();
@@ -515,7 +560,26 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
             // let mut map = inner_cf.lock();
             let callback = inner_cf.remove(&address);
             if let Some(caller) = callback {
-                caller.1.call((mut_msg, ev)).await;
+
+                let handler = tokio::spawn(caller.1(mut_msg.clone(), ev));
+                match handler.catch_unwind().await {
+                    Ok(ok) => match ok {
+                        Ok(_) => {},
+                        Err(err) => {
+                            error!("{:?}", err.to_string());
+                            mut_msg.reply(Body::Panic(err.to_string()));
+                        }
+                    },
+                    Err(err) => {
+                        if let Some (err_msg) = err.downcast_ref::<&str>() {
+                            error!("{:?}", err_msg);
+                            mut_msg.reply(Body::Panic(err_msg.to_string()));
+                        } else {
+                            mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                        }
+
+                    }
+                }
             }
         }
     }
@@ -537,24 +601,82 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         match callback {
             Some(caller) => {
                 if !mut_msg.invoke.load(Ordering::SeqCst) {
-                    caller(mut_msg.clone(), ev).await;
+                    let handler = tokio::spawn(caller(mut_msg.clone(), ev));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
+                        Err(err) => {
+                            if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                error!("{:?}", err_msg);
+                                mut_msg.reply(Body::Panic(err_msg.to_string()));
+                            } else {
+                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                            }
+
+                        }
+                    }
                     mut_msg.invoke.store(true, Ordering::SeqCst);
                 }
                 if mut_msg.inner.borrow().address.is_some() {
-                    inner_sender.send(mut_msg.clone()).unwrap();
+                    if mut_msg.invoke_count.load(Ordering::SeqCst) == 5 {
+                        mut_msg.reply(Body::Panic("Message got stuck in a loop probably due to an error in the reply to the sub-message. Message deleted!".to_string()));
+                        inner_sender.send(mut_msg.clone()).unwrap();
+                    } else if mut_msg.invoke_count.load(Ordering::SeqCst) < 5  {
+                        inner_sender.send(mut_msg.clone()).unwrap();
+                    }
                 }
             }
             None => {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
-                    caller.1.call((msg, ev)).await;
+                    let handler = tokio::spawn(caller.1.call((msg, ev)));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
+                        Err(err) => {
+                            if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                error!("{:?}", err_msg);
+                                mut_msg.reply(Body::Panic(err_msg.to_string()));
+                            } else {
+                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                            }
+
+                        }
+                    }
                 } else { // wysłanie odpowiedzi do requesta
                     let address = mut_msg.inner.borrow().replay.clone();
                     if let Some(address) = address {
                         let callback = inner_cf.remove(&address);
                         if let Some(caller) = callback {
-                            caller.1.call((mut_msg, ev)).await;
+                            let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
+                            match handler.catch_unwind().await {
+                                Ok(ok) => match ok {
+                                    Ok(_) => {},
+                                    Err(err) => {
+                                        error!("{:?}", err.to_string());
+                                        mut_msg.reply(Body::Panic(err.to_string()));
+                                    }
+                                },
+                                Err(err) => {
+                                    if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                        error!("{:?}", err_msg);
+                                        mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                    } else {
+                                        mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -578,19 +700,60 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let callback = inner_consummers.get(&address.to_string());
         match callback {
             Some(caller) => {
+                mut_msg.invoke_count.fetch_add(1, Ordering::SeqCst);
                 if !mut_msg.invoke.load(Ordering::SeqCst) {
-                    caller(mut_msg.clone(), ev).await;
+                    let handler = tokio::spawn(caller(mut_msg.clone(), ev));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
+                        Err(err) => {
+                            if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                error!("{:?}", err_msg);
+                                mut_msg.reply(Body::Panic(err_msg.to_string()));
+                            } else {
+                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                            }
+
+                        }
+                    }
                     mut_msg.invoke.store(true, Ordering::SeqCst);
                 }
                 if mut_msg.inner.borrow().address.is_some() {
-                    inner_sender.send(mut_msg.clone()).unwrap();
+                    if mut_msg.invoke_count.load(Ordering::SeqCst) == 5 {
+                        mut_msg.reply(Body::Panic("Message got stuck in a loop probably due to an error in the reply to the sub-message. Message deleted! ".to_string()));
+                        inner_sender.send(mut_msg.clone()).unwrap();
+                    } else if mut_msg.invoke_count.load(Ordering::SeqCst) < 5  {
+                        inner_sender.send(mut_msg.clone()).unwrap();
+                    }
                 }
             }
             None => {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
-                    caller.1.call((msg, ev)).await;
+                    let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
+                        Err(err) => {
+                            if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                error!("{:?}", err_msg);
+                                mut_msg.reply(Body::Panic(err_msg.to_string()));
+                            } else {
+                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -709,9 +872,9 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     pub fn local_consumer<OP>(&self, address: &str, op: OP)
         where
-            OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync,
+            OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync + RefUnwindSafe,
     {
-        let local_op = Box::pin(op);
+        let local_op = wrap_with_catch_unwind(op);
         unsafe {
             let mut local_cons = self.consumers_async.clone();
             Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), local_op);
@@ -720,11 +883,12 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
 
     pub fn consumer<OP>(&self, address: &str, op: OP)
     where
-        OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync,
+        OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync + RefUnwindSafe,
     {
         unsafe {
             let mut local_cons = self.consumers.clone();
-            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), Box::pin(op));
+            let local_op = wrap_with_catch_unwind(op);
+            Arc::get_mut_unchecked(&mut local_cons).insert(address.to_string(), local_op);
         }
         match self.cluster_manager.as_ref() {
             Some(cm) => {
@@ -746,6 +910,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let message = Message{
             inner: AtomicRefCell::new(message_inner),
             invoke: Default::default(),
+            invoke_count: AtomicI16::new(0)
         };
         let local_sender = self.sender.lock();
         local_sender.send(Arc::new(message)).unwrap();
@@ -764,6 +929,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let message = Message{
             inner: AtomicRefCell::new(message_inner),
             invoke: Default::default(),
+            invoke_count: AtomicI16::new(0)
         };
         let local_sender = self.sender.lock();
         local_sender.send(Arc::new(message)).unwrap();
@@ -772,7 +938,7 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
     #[inline]
     pub fn request<OP>(&self, address: &str, request: Body, op: OP)
     where
-        OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<'static, ()> + Send + 'static + Sync,
+        OP: Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync + RefUnwindSafe,
     {
         let addr = address.to_owned();
         let message_inner = MessageInner {
@@ -789,10 +955,12 @@ impl<CM: 'static + ClusterManager + Send + Sync> EventBus<CM> {
         let message = Message{
             inner: AtomicRefCell::new(message_inner),
             invoke: Default::default(),
+            invoke_count: AtomicI16::new(0)
         };
         let local_cons = self.callback_functions.clone();
+        let local_op = wrap_with_catch_unwind(op);
         local_cons
-            .insert(message.replay().unwrap(), Box::pin(op));
+            .insert(message.replay().unwrap(), local_op);
         let local_sender = self.sender.lock();
         if let Err(err) = local_sender.send(Arc::new(message)) {
             warn!("{:?}", err);

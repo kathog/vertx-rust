@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::panic::RefUnwindSafe;
 use std::sync::Arc;
-use bytes::Bytes;
 
 use chrono::{DateTime, Local};
 use hashbrown::hash_map::{Iter};
@@ -79,7 +79,7 @@ impl Request {
 
 }
 
-pub struct HttpServer<CM: 'static + ClusterManager + Send + Sync> {
+pub struct HttpServer<CM: 'static + ClusterManager + Send + Sync +  RefUnwindSafe> {
     pub port: u16,
     event_bus: Option<Arc<EventBus<CM>>>,
     callers: Arc<
@@ -98,7 +98,7 @@ pub struct HttpServer<CM: 'static + ClusterManager + Send + Sync> {
     main_reg: Regex,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> HttpServer<CM> {
+impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> HttpServer<CM> {
     pub(crate) fn new(event_bus: Option<Arc<EventBus<CM>>>) -> HttpServer<CM> {
         HttpServer {
             port: 0,

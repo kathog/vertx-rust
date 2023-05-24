@@ -1,7 +1,8 @@
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::panic::RefUnwindSafe;
+use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 use atomic_refcell::AtomicRefCell;
 use crate::vertx::message::Body::{ByteArray, Byte, Short};
 
@@ -35,7 +36,11 @@ pub struct MessageInner {
 pub struct Message {
     pub(crate) inner: AtomicRefCell<MessageInner>,
     pub(crate) invoke: AtomicBool,
+    pub(crate) invoke_count: AtomicI16,
 }
+
+impl RefUnwindSafe for Message {}
+impl RefUnwindSafe for MessageInner {}
 
 #[derive(Clone, Debug)]
 pub enum Body {
@@ -51,7 +56,8 @@ pub enum Body {
     Boolean(bool),
     Char(char),
     Null,
-    Ping
+    Ping,
+    Panic(String)
 }
 
 impl Body {
@@ -178,7 +184,8 @@ impl Message {
         };
         Message {
             inner: AtomicRefCell::new(inner),
-            invoke: AtomicBool::new(false)
+            invoke: AtomicBool::new(false),
+            invoke_count: AtomicI16::new(0)
         }
     }
 }
@@ -212,6 +219,9 @@ impl From<Vec<u8>> for Message {
         idx += 4;
         let body;
         match system_codec_id {
+            99 => {
+                body = Body::Panic("".to_string())
+            }
             0 => {
                 body = Body::Null
             },
@@ -269,7 +279,8 @@ impl From<Vec<u8>> for Message {
         };
         Message {
             inner: AtomicRefCell::new(inner),
-            invoke: AtomicBool::new(false)
+            invoke: AtomicBool::new(false),
+            invoke_count: AtomicI16::new(0)
         }
     }
 }
@@ -317,6 +328,9 @@ impl Message {
             }
             Body::Ping => {
                 data.push(1);
+            }
+            Body::Panic(_) => {
+                data.push(99);
             }
         };
 

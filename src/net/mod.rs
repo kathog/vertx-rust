@@ -1,3 +1,4 @@
+use std::panic::RefUnwindSafe;
 use crate::vertx::{cm::ClusterManager, message::Message, EventBus};
 use log::{error, info};
 use std::sync::Arc;
@@ -7,12 +8,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 // use tokio::sync::mpsc::Sender;
 
 
-pub struct NetServer<CM: 'static + ClusterManager + Send + Sync> {
+pub struct NetServer<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> {
     pub port: u16,
     event_bus: Option<Arc<EventBus<CM>>>,
 }
 
-impl<CM: 'static + ClusterManager + Send + Sync> NetServer<CM> {
+impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> NetServer<CM> {
     pub(crate) fn new(event_bus: Option<Arc<EventBus<CM>>>) -> &'static mut NetServer<CM> {
         Box::leak(Box::new(NetServer::<CM> { port: 0, event_bus }))
     }

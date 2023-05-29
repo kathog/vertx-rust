@@ -14,7 +14,6 @@ use std::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 use std::{
     sync::{Arc},
 };
-use std::any::Any;
 use std::future::Future;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -735,7 +734,6 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             None => {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
-                    let msg = mut_msg.clone();
                     let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
                     match handler.catch_unwind().await {
                         Ok(ok) => match ok {

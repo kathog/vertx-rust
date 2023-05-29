@@ -138,6 +138,14 @@ impl Body {
             _ => Err("Body type is not a Byte Array")
         }
     }
+
+    #[inline]
+    pub fn as_panic(&self) -> Result<&String, &str> {
+        match self {
+            Body::Panic(s) => Ok(s),
+            _ => Err("Body type is not a Panic")
+        }
+    }
 }
 
 impl Default for Body {
@@ -220,7 +228,10 @@ impl From<Vec<u8>> for Message {
         let body;
         match system_codec_id {
             99 => {
-                body = Body::Panic("".to_string())
+                let len_body = i32::from_be_bytes(msg[idx..idx + 4].try_into().unwrap()) as usize;
+                idx += 4;
+                let body_array = msg[idx..idx + len_body].to_vec();
+                body = Body::Panic(String::from_utf8(body_array).unwrap())
             }
             0 => {
                 body = Body::Null
@@ -389,6 +400,10 @@ impl Message {
             }
             Body::Char(b) => {
                 data.extend_from_slice((((*b) as u32) as i16).to_be_bytes().as_slice());
+            }
+            Body::Panic(b) => {
+                data.extend_from_slice(&(b.len() as i32).to_be_bytes());
+                data.extend_from_slice(b.as_bytes());
             }
             _ => {}
         };

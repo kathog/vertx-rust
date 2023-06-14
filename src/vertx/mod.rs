@@ -47,9 +47,10 @@ pub fn wrap_with_catch_unwind<CM, F>(func: F) -> PinBoxFnMessage<CM>
             Err(err) => Box::pin(async move {
                 if let Some (err_msg) = err.downcast_ref::<&str>() {
                     error!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>());
+                    msg.reply(Body::Panic(format!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>())));
+                } else {
+                    mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
                 }
-
-                msg.reply(Body::Null);
             }),
         }
     };
@@ -222,8 +223,6 @@ pub struct EventBus<CM: 'static + ClusterManager + Send + Sync+ RefUnwindSafe> {
     options: EventBusOptions,
     consumers: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
     consumers_async: Arc<HashMap<String, PinBoxFnMessage<CM>>>,
-    // local_consumers:
-    //     Arc<HashMap<String, BoxFnMessage<CM>>>,
     callback_functions:
         Arc<DashMap<String, PinBoxFnMessage<CM>>>,
     pub(crate) sender: Mutex<Sender<Arc<Message>>>,
@@ -244,7 +243,6 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             options,
             consumers: Arc::new(HashMap::new()),
             consumers_async: Arc::new(HashMap::new()),
-            // local_consumers: Arc::new(HashMap::new()),
             callback_functions: Arc::new(DashMap::new()),
             sender: Mutex::new(sender),
             receiver_joiner: Arc::new(receiver_joiner),
@@ -309,7 +307,6 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
     ) {
         let local_cm = self.cluster_manager.clone();
         let local_ev = self.self_arc.clone();
-        // let local_local_consumers = self.local_consumers.clone();
         let local_local_consumers = self.consumers_async.clone();
 
         let joiner = tokio::spawn(async move {

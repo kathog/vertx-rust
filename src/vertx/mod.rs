@@ -49,7 +49,7 @@ pub fn wrap_with_catch_unwind<CM, F>(func: F) -> PinBoxFnMessage<CM>
                     error!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>());
                     msg.reply(Body::Panic(format!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>())));
                 } else {
-                    mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                    msg.reply(Body::Panic("Unknown panic!".to_string()));
                 }
             }),
         }

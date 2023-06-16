@@ -27,6 +27,7 @@ use dashmap::DashMap;
 // use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
+#[cfg(feature = "catch_unwind")]
 use futures::FutureExt;
 
 // type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
@@ -384,23 +385,28 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
 
                                                         match callback {
                                                             Some(caller) => {
-                                                                let handler = tokio::spawn(caller.1(mut_msg.clone(), inner_ev.clone().unwrap()));
-                                                                match handler.catch_unwind().await {
-                                                                    Ok(ok) => match ok {
-                                                                        Ok(_) => {},
+                                                                #[cfg(not(feature = "catch_unwind"))]
+                                                                caller.1.call((mut_msg.clone(), inner_ev.clone().unwrap())).await;
+                                                                #[cfg(feature = "catch_unwind")]
+                                                                {
+                                                                    let handler = tokio::spawn(caller.1.call((mut_msg.clone(), inner_ev.clone().unwrap())));
+                                                                    match handler.catch_unwind().await {
+                                                                        Ok(ok) => match ok {
+                                                                            Ok(_) => {},
+                                                                            Err(err) => {
+                                                                                error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                                                                mut_msg.reply(Body::Panic(err.to_string()));
+                                                                            }
+                                                                        },
                                                                         Err(err) => {
-                                                                            error!("{:?}", err.to_string());
-                                                                            mut_msg.reply(Body::Panic(err.to_string()));
-                                                                        }
-                                                                    },
-                                                                    Err(err) => {
-                                                                        if let Some (err_msg) = err.downcast_ref::<&str>() {
-                                                                            error!("{:?}", err_msg);
-                                                                            mut_msg.reply(Body::Panic(err_msg.to_string()));
-                                                                        } else {
-                                                                            mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
-                                                                        }
+                                                                            if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                                                                error!("{:?}", err_msg);
+                                                                                mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                                                            } else {
+                                                                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                                                            }
 
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -557,23 +563,28 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             let callback = inner_cf.remove(&address);
             if let Some(caller) = callback {
 
-                let handler = tokio::spawn(caller.1(mut_msg.clone(), ev));
-                match handler.catch_unwind().await {
-                    Ok(ok) => match ok {
-                        Ok(_) => {},
+                #[cfg(not(feature = "catch_unwind"))]
+                caller.1(mut_msg.clone(), ev).await;
+                #[cfg(feature = "catch_unwind")]
+                {
+                    let handler = tokio::spawn(caller.1(mut_msg.clone(), ev));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
                         Err(err) => {
-                            error!("{:?}", err.to_string());
-                            mut_msg.reply(Body::Panic(err.to_string()));
-                        }
-                    },
-                    Err(err) => {
-                        if let Some (err_msg) = err.downcast_ref::<&str>() {
-                            error!("{:?}", err_msg);
-                            mut_msg.reply(Body::Panic(err_msg.to_string()));
-                        } else {
-                            mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
-                        }
+                            if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                error!("{:?}", err_msg);
+                                mut_msg.reply(Body::Panic(err_msg.to_string()));
+                            } else {
+                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                            }
 
+                        }
                     }
                 }
             }
@@ -597,23 +608,28 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
         match callback {
             Some(caller) => {
                 if !mut_msg.invoke.load(Ordering::SeqCst) {
-                    let handler = tokio::spawn(caller(mut_msg.clone(), ev));
-                    match handler.catch_unwind().await {
-                        Ok(ok) => match ok {
-                            Ok(_) => {},
+                    #[cfg(not(feature = "catch_unwind"))]
+                    caller(mut_msg.clone(), ev).await;
+                    #[cfg(feature = "catch_unwind")]
+                    {
+                        let handler = tokio::spawn(caller(mut_msg.clone(), ev));
+                        match handler.catch_unwind().await {
+                            Ok(ok) => match ok {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    error!("{:?}", err.to_string());
+                                    mut_msg.reply(Body::Panic(err.to_string()));
+                                }
+                            },
                             Err(err) => {
-                                error!("{:?}", err.to_string());
-                                mut_msg.reply(Body::Panic(err.to_string()));
-                            }
-                        },
-                        Err(err) => {
-                            if let Some (err_msg) = err.downcast_ref::<&str>() {
-                                error!("{:?}", err_msg);
-                                mut_msg.reply(Body::Panic(err_msg.to_string()));
-                            } else {
-                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
-                            }
+                                if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                    error!("{:?}", err_msg);
+                                    mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                } else {
+                                    mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                }
 
+                            }
                         }
                     }
                     mut_msg.invoke.store(true, Ordering::SeqCst);
@@ -631,23 +647,28 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
-                    let handler = tokio::spawn(caller.1.call((msg, ev)));
-                    match handler.catch_unwind().await {
-                        Ok(ok) => match ok {
-                            Ok(_) => {},
+                    #[cfg(not(feature = "catch_unwind"))]
+                    caller.1.call((msg, ev)).await;
+                    #[cfg(feature = "catch_unwind")]
+                    {
+                        let handler = tokio::spawn(caller.1.call((msg, ev)));
+                        match handler.catch_unwind().await {
+                            Ok(ok) => match ok {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                    mut_msg.reply(Body::Panic(err.to_string()));
+                                }
+                            },
                             Err(err) => {
-                                error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
-                                mut_msg.reply(Body::Panic(err.to_string()));
-                            }
-                        },
-                        Err(err) => {
-                            if let Some (err_msg) = err.downcast_ref::<&str>() {
-                                error!("{:?}", err_msg);
-                                mut_msg.reply(Body::Panic(err_msg.to_string()));
-                            } else {
-                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
-                            }
+                                if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                    error!("{:?}", err_msg);
+                                    mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                } else {
+                                    mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                }
 
+                            }
                         }
                     }
                 } else { // wysłanie odpowiedzi do requesta
@@ -655,21 +676,27 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
                     if let Some(address) = address {
                         let callback = inner_cf.remove(&address);
                         if let Some(caller) = callback {
-                            let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
-                            match handler.catch_unwind().await {
-                                Ok(ok) => match ok {
-                                    Ok(_) => {},
+                            #[cfg(not(feature = "catch_unwind"))]
+                            caller.1.call((mut_msg.clone(), ev)).await;
+                            #[cfg(feature = "catch_unwind")]
+                            {
+                                let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
+                                match handler.catch_unwind().await {
+                                    Ok(ok) => match ok {
+                                        Ok(_) => {},
+                                        Err(err) => {
+                                            error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                            mut_msg.reply(Body::Panic(err.to_string()));
+                                        }
+                                    },
                                     Err(err) => {
-                                        error!("{:?}", err.to_string());
-                                        mut_msg.reply(Body::Panic(err.to_string()));
-                                    }
-                                },
-                                Err(err) => {
-                                    if let Some (err_msg) = err.downcast_ref::<&str>() {
-                                        error!("{:?}", err_msg);
-                                        mut_msg.reply(Body::Panic(err_msg.to_string()));
-                                    } else {
-                                        mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                        if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                            error!("{:?}", err_msg);
+                                            mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                        } else {
+                                            mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                        }
+
                                     }
                                 }
                             }
@@ -698,23 +725,28 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             Some(caller) => {
                 mut_msg.invoke_count.fetch_add(1, Ordering::SeqCst);
                 if !mut_msg.invoke.load(Ordering::SeqCst) {
-                    let handler = tokio::spawn(caller(mut_msg.clone(), ev));
-                    match handler.catch_unwind().await {
-                        Ok(ok) => match ok {
-                            Ok(_) => {},
+                    #[cfg(not(feature = "catch_unwind"))]
+                    caller.call((mut_msg.clone(), ev)).await;
+                    #[cfg(feature = "catch_unwind")]
+                    {
+                        let handler = tokio::spawn(caller.call((mut_msg.clone(), ev)));
+                        match handler.catch_unwind().await {
+                            Ok(ok) => match ok {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                    mut_msg.reply(Body::Panic(err.to_string()));
+                                }
+                            },
                             Err(err) => {
-                                error!("{:?}", err.to_string());
-                                mut_msg.reply(Body::Panic(err.to_string()));
-                            }
-                        },
-                        Err(err) => {
-                            if let Some (err_msg) = err.downcast_ref::<&str>() {
-                                error!("{:?}", err_msg);
-                                mut_msg.reply(Body::Panic(err_msg.to_string()));
-                            } else {
-                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
-                            }
+                                if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                    error!("{:?}", err_msg);
+                                    mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                } else {
+                                    mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                }
 
+                            }
                         }
                     }
                     mut_msg.invoke.store(true, Ordering::SeqCst);
@@ -731,21 +763,27 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             None => {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
-                    let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
-                    match handler.catch_unwind().await {
-                        Ok(ok) => match ok {
-                            Ok(_) => {},
+                    #[cfg(not(feature = "catch_unwind"))]
+                    caller.1.call((mut_msg, ev)).await;
+                    #[cfg(feature = "catch_unwind")]
+                    {
+                        let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
+                        match handler.catch_unwind().await {
+                            Ok(ok) => match ok {
+                                Ok(_) => {},
+                                Err(err) => {
+                                    error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                    mut_msg.reply(Body::Panic(err.to_string()));
+                                }
+                            },
                             Err(err) => {
-                                error!("{:?}", err.to_string());
-                                mut_msg.reply(Body::Panic(err.to_string()));
-                            }
-                        },
-                        Err(err) => {
-                            if let Some (err_msg) = err.downcast_ref::<&str>() {
-                                error!("{:?}", err_msg);
-                                mut_msg.reply(Body::Panic(err_msg.to_string()));
-                            } else {
-                                mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                if let Some (err_msg) = err.downcast_ref::<&str>() {
+                                    error!("{:?}", err_msg);
+                                    mut_msg.reply(Body::Panic(err_msg.to_string()));
+                                } else {
+                                    mut_msg.reply(Body::Panic("Unknown panic!".to_string()));
+                                }
+
                             }
                         }
                     }

@@ -1,6 +1,6 @@
 [package]
 name = "vertx-rust"
-version = "0.8.4"
+version = "0.8.5"
 authors = ["Daniel Lewiński <nerull@szwadron.net>"]
 edition = "2021"
 description = "Simple Rust version of vertx tcp eventbus, tcp server and http server"
@@ -16,6 +16,7 @@ default = ["client"]
 zk = ["zookeeper"]
 tc = ["tcmalloc"]
 client = ["hyper-tls"]
+catch_unwind = []
 
 
 [dependencies]

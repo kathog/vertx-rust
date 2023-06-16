@@ -18,17 +18,20 @@ use std::future::Future;
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::marker::PhantomData;
-use std::panic::{RefUnwindSafe, UnwindSafe};
+use std::panic::RefUnwindSafe;
 use std::pin::Pin;
 use std::process::exit;
 use atomic_refcell::AtomicRefCell;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use dashmap::DashMap;
+// use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 use futures::FutureExt;
 
-pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static + UnwindSafe>>;
+// type BoxFnMessage<CM> = Box<dyn Fn(&mut Message, Arc<EventBus<CM>>) + Send + Sync>;
+// type PinBoxFnMessage<CM> = Box<dyn Fn(&Message, Arc<EventBus<CM>>) + Send + Sync>;
+pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
 type PinBoxFnMessage<CM> = Pin<Box<dyn Fn(Arc<Message>, Arc<EventBus<CM>>) -> BoxFuture<()> + Send + 'static + Sync + RefUnwindSafe>>;
 
 
@@ -41,17 +44,14 @@ pub fn wrap_with_catch_unwind<CM, F>(func: F) -> PinBoxFnMessage<CM>
         let result = std::panic::catch_unwind(|| func(msg.clone(), bus.clone()));
         match result {
             Ok(future) => future,
-            Err(err) => {
-                let body = if let Some (err_msg) = err.downcast_ref::<&str>() {
+            Err(err) => Box::pin(async move {
+                if let Some (err_msg) = err.downcast_ref::<&str>() {
                     error!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>());
-                    Body::Panic(format!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>()))
+                    msg.reply(Body::Panic(format!("{:?} in function: {:?}", err_msg, std::any::type_name::<F>())));
                 } else {
-                    Body::Panic("Unknown panic!".to_string())
-                };
-                Box::pin(async move {
-                    msg.reply(body);
-                })
-            }
+                    msg.reply(Body::Panic("Unknown panic!".to_string()));
+                }
+            }),
         }
     };
 
@@ -384,8 +384,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
 
                                                         match callback {
                                                             Some(caller) => {
-                                                                match caller.1(mut_msg.clone(), inner_ev.clone().unwrap()).catch_unwind().await {
-                                                                    Ok(_) => {},
+                                                                let handler = tokio::spawn(caller.1(mut_msg.clone(), inner_ev.clone().unwrap()));
+                                                                match handler.catch_unwind().await {
+                                                                    Ok(ok) => match ok {
+                                                                        Ok(_) => {},
+                                                                        Err(err) => {
+                                                                            error!("{:?}", err.to_string());
+                                                                            mut_msg.reply(Body::Panic(err.to_string()));
+                                                                        }
+                                                                    },
                                                                     Err(err) => {
                                                                         if let Some (err_msg) = err.downcast_ref::<&str>() {
                                                                             error!("{:?}", err_msg);
@@ -523,14 +530,16 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             let node_id = node.nodeId.clone();
             // let mut message: &'static mut Message = Box::leak(Box::from(mut_msg.clone()));
             let message = mut_msg.clone();
-            let tcp_stream = TCPS.get(&node_id);
-            match tcp_stream {
-                Some(stream) => <EventBus<CM>>::get_stream(message, stream).await,
+            // tokio::spawn(async move {
+                let tcp_stream = TCPS.get(&node_id);
+                match tcp_stream {
+                    Some(stream) => <EventBus<CM>>::get_stream(message, stream).await,
 
-                None => {
-                    <EventBus<CM>>::create_stream(message, host, port, node_id).await;
+                    None => {
+                        <EventBus<CM>>::create_stream(message, host, port, node_id).await;
+                    }
                 }
-            }
+            // });
         }
     }
 
@@ -548,8 +557,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             let callback = inner_cf.remove(&address);
             if let Some(caller) = callback {
 
-                match caller.1(mut_msg.clone(), ev).catch_unwind().await {
-                    Ok(_) => {},
+                let handler = tokio::spawn(caller.1(mut_msg.clone(), ev));
+                match handler.catch_unwind().await {
+                    Ok(ok) => match ok {
+                        Ok(_) => {},
+                        Err(err) => {
+                            error!("{:?}", err.to_string());
+                            mut_msg.reply(Body::Panic(err.to_string()));
+                        }
+                    },
                     Err(err) => {
                         if let Some (err_msg) = err.downcast_ref::<&str>() {
                             error!("{:?}", err_msg);
@@ -581,8 +597,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
         match callback {
             Some(caller) => {
                 if !mut_msg.invoke.load(Ordering::SeqCst) {
-                    match caller(mut_msg.clone(), ev).catch_unwind().await {
-                        Ok(_) => {},
+                    let handler = tokio::spawn(caller(mut_msg.clone(), ev));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
                         Err(err) => {
                             if let Some (err_msg) = err.downcast_ref::<&str>() {
                                 error!("{:?}", err_msg);
@@ -608,8 +631,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
                     let msg = mut_msg.clone();
-                    match caller.1.call((msg, ev)).catch_unwind().await {
-                        Ok(_) => {},
+                    let handler = tokio::spawn(caller.1.call((msg, ev)));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?} in replay function: {:?}", err.to_string(), mut_msg.address());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
                         Err(err) => {
                             if let Some (err_msg) = err.downcast_ref::<&str>() {
                                 error!("{:?}", err_msg);
@@ -625,8 +655,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
                     if let Some(address) = address {
                         let callback = inner_cf.remove(&address);
                         if let Some(caller) = callback {
-                            match caller.1.call((mut_msg.clone(), ev)).catch_unwind().await {
-                                Ok(_) => {},
+                            let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
+                            match handler.catch_unwind().await {
+                                Ok(ok) => match ok {
+                                    Ok(_) => {},
+                                    Err(err) => {
+                                        error!("{:?}", err.to_string());
+                                        mut_msg.reply(Body::Panic(err.to_string()));
+                                    }
+                                },
                                 Err(err) => {
                                     if let Some (err_msg) = err.downcast_ref::<&str>() {
                                         error!("{:?}", err_msg);
@@ -661,8 +698,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             Some(caller) => {
                 mut_msg.invoke_count.fetch_add(1, Ordering::SeqCst);
                 if !mut_msg.invoke.load(Ordering::SeqCst) {
-                    match caller(mut_msg.clone(), ev).catch_unwind().await {
-                        Ok(_) => {},
+                    let handler = tokio::spawn(caller(mut_msg.clone(), ev));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
                         Err(err) => {
                             if let Some (err_msg) = err.downcast_ref::<&str>() {
                                 error!("{:?}", err_msg);
@@ -687,8 +731,15 @@ impl<CM: 'static + ClusterManager + Send + Sync + RefUnwindSafe> EventBus<CM> {
             None => {
                 let callback = inner_cf.remove(address);
                 if let Some(caller) = callback {
-                    match caller.1.call((mut_msg.clone(), ev)).catch_unwind().await {
-                        Ok(_) => {},
+                    let handler = tokio::spawn(caller.1.call((mut_msg.clone(), ev)));
+                    match handler.catch_unwind().await {
+                        Ok(ok) => match ok {
+                            Ok(_) => {},
+                            Err(err) => {
+                                error!("{:?}", err.to_string());
+                                mut_msg.reply(Body::Panic(err.to_string()));
+                            }
+                        },
                         Err(err) => {
                             if let Some (err_msg) = err.downcast_ref::<&str>() {
                                 error!("{:?}", err_msg);

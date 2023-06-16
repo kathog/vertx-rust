@@ -2,12 +2,13 @@
 
 use std::sync::Arc;
 use crossbeam_channel::bounded;
+use futures::future::{BoxFuture};
 use hyper::Response;
 use hyper::StatusCode;
 use vertx_rust::vertx::message::{Body, Message};
-use vertx_rust::vertx::{BoxFuture, cm::NoClusterManager, EventBus, Vertx, VertxOptions};
+use vertx_rust::vertx::{cm::NoClusterManager, EventBus, Vertx, VertxOptions};
 
-fn invoke_test1 (m: Arc<Message>, ev: Arc<EventBus<NoClusterManager>>) -> BoxFuture<()>{
+fn invoke_test1 (m: Arc<Message>, ev: Arc<EventBus<NoClusterManager>>) -> BoxFuture<'static, ()>{
     let b = m.body();
     let response = format!(r#"{{"health": "{code}"}}"#, code = b.as_i32().unwrap());
     println!("hello from consumer test.01");
